@@ -78,7 +78,6 @@ struct ReferenceInspector: View {
         let parsed = row.structured
         let fields = row.reference.metadata.fields
         let readable = [
-            ("Authors", row.author, ["author"]),
             ("Editors", parsed.editors.map(\.displayName).joined(separator: "; "), ["editor"]),
             ("Publication Date", parsed.date?.text ?? "", ["date", "year", "month", "day"]),
             ("Event Date", parsed.eventDate?.text ?? "", ["eventdate"]),
@@ -86,21 +85,60 @@ struct ReferenceInspector: View {
             ("Access Date", parsed.accessDate?.text ?? "", ["urldate"]),
             ("Published In", parsed.containerTitle ?? "", ["journaltitle", "journal", "booktitle"]),
             ("Publisher", parsed.publisher ?? "", ["publisher"]),
-            ("DOI", parsed.doi ?? "", ["doi"]),
-            ("URL", parsed.url ?? "", ["url"]),
             ("Keywords", parsed.keywords.joined(separator: ", "), ["keywords"]),
             ("Abstract", parsed.abstract ?? "", ["abstract"]),
         ].filter { !$0.1.isEmpty }
         var represented = Set(readable.flatMap(\.2))
         if parsed.title != nil { represented.insert("title") }
+        if !parsed.authors.isEmpty { represented.insert("author") }
+        if parsed.doi != nil { represented.insert("doi") }
+        if parsed.url != nil { represented.insert("url") }
 
         return VStack(alignment: .leading, spacing: 10) {
             information("Citation Key", row.key, monospaced: true)
+            if !parsed.authors.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Authors").font(.caption).foregroundStyle(.secondary)
+                    ForEach(parsed.authors.indices, id: \.self) { index in
+                        Text(parsed.authors[index].displayName)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .contain)
+            }
+            if let doi = parsed.doi {
+                webLink("DOI", doi, destination: doiDestination(doi))
+            }
+            if let url = parsed.url {
+                webLink("URL", url, destination: doiDestination(url) ?? webDestination(url))
+            }
             ForEach(readable, id: \.0) { label, value, _ in
                 information(label, value)
             }
             ForEach(fields.keys.filter { !represented.contains($0) }.sorted(), id: \.self) { name in
                 information(name, fields[name] ?? "")
+            }
+        }
+    }
+
+    private func webLink(_ label: String, _ value: String, destination: URL?) -> some View {
+        Group {
+            if let destination {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(label).font(.caption).foregroundStyle(.secondary)
+                    Link(destination: destination) {
+                        Text(value)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .environment(\.openURL, OpenURLAction { url in
+                        model.confirmation = .openLink(url)
+                        return .handled
+                    })
+                }
+            } else {
+                information(label, value)
             }
         }
     }
@@ -122,16 +160,12 @@ struct ReferenceInspector: View {
                 Text("Collections").font(.headline)
                 Spacer()
                 if details.reference.trashedAt == nil {
-                    Menu {
-                        ForEach(model.collections.filter { !details.collectionIDs.contains($0.id) }) { collection in
-                            Button(collection.name) { model.setMembership(details.reference.id, in: collection.id, isMember: true) }
-                        }
-                    } label: {
-                        Label("Add to Collection", systemImage: "plus").labelStyle(.iconOnly)
-                    }
+                    AddToCollectionMenu(
+                        model: model, referenceID: details.reference.id, existingIDs: details.collectionIDs
+                    )
+                    .labelStyle(.iconOnly)
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .disabled(model.working || model.collections.allSatisfy { details.collectionIDs.contains($0.id) })
                 }
             }
             if details.collectionIDs.isEmpty {
@@ -201,4 +235,34 @@ struct ReferenceInspector: View {
             }
         }
     }
+}
+
+private func webDestination(_ value: String) -> URL? {
+    guard let components = URLComponents(string: value),
+          let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+          let host = components.host, !host.isEmpty else { return nil }
+    return components.url
+}
+
+private func doiDestination(_ value: String) -> URL? {
+    let identifier = value.prefix(4).lowercased() == "doi:"
+        ? value.dropFirst(4).trimmingCharacters(in: .whitespacesAndNewlines)
+        : value
+    var resolver = URLComponents()
+    resolver.scheme = "https"
+    resolver.host = "doi.org"
+
+    if let url = webDestination(identifier),
+       let source = URLComponents(url: url, resolvingAgainstBaseURL: false),
+       let host = source.host?.lowercased(), ["doi.org", "dx.doi.org", "www.doi.org"].contains(host) {
+        resolver.percentEncodedPath = source.percentEncodedPath
+        resolver.percentEncodedQuery = source.percentEncodedQuery
+        resolver.percentEncodedFragment = source.percentEncodedFragment
+        return resolver.url
+    }
+
+    let parts = identifier.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+    guard parts.count == 2, parts[0].hasPrefix("10."), parts[0].count > 3, !parts[1].isEmpty else { return nil }
+    resolver.path = "/\(identifier)"
+    return resolver.url
 }

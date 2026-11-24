@@ -221,6 +221,8 @@ struct ReferenceMenu: View {
         if reference.trashedAt == nil {
             Button("Edit Reference…") { model.editor = .reference(reference) }.disabled(model.working)
             Button("Add Attachment…") { model.filePicker = .attach(reference.id) }.disabled(model.working)
+            AddToCollectionMenu(model: model, referenceID: reference.id, existingIDs: existingCollectionIDs)
+                .labelStyle(.titleOnly)
             if let collectionID = scope.collectionID {
                 Button("Remove from Collection") { model.setMembership(reference.id, in: collectionID, isMember: false) }
                     .disabled(model.working)
@@ -231,5 +233,32 @@ struct ReferenceMenu: View {
             Button("Move to macOS Trash…", role: .destructive) { model.confirmation = .purge(reference) }
                 .disabled(model.working)
         }
+    }
+
+    private var existingCollectionIDs: Set<UUID> {
+        var ids = Set<UUID>()
+        if let details = model.details, details.reference.id == reference.id {
+            ids = details.collectionIDs
+        }
+        if let collectionID = scope.collectionID { ids.insert(collectionID) }
+        return ids
+    }
+}
+
+struct AddToCollectionMenu: View {
+    let model: LibraryWindowModel
+    let referenceID: UUID
+    let existingIDs: Set<UUID>
+
+    var body: some View {
+        let destinations = model.collections.filter { !existingIDs.contains($0.id) }
+        Menu {
+            ForEach(destinations) { collection in
+                Button(collection.name) { model.setMembership(referenceID, in: collection.id, isMember: true) }
+            }
+        } label: {
+            Label("Add to Collection", systemImage: "plus")
+        }
+        .disabled(model.working || destinations.isEmpty)
     }
 }

@@ -93,7 +93,9 @@ private struct LibraryBrowser: View {
         .alert(model.confirmation?.title ?? "Confirm", isPresented: Binding(
             get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }
         ), presenting: model.confirmation) { confirmation in
-            Button(confirmation.action, role: .destructive) { model.confirm(confirmation) }
+            Button(confirmation.action, role: confirmation.isDestructive ? .destructive : nil) {
+                model.confirm(confirmation)
+            }
             Button("Cancel", role: .cancel) {}
         } message: { confirmation in
             Text(confirmation.detail)

@@ -26,12 +26,19 @@ enum LibraryConfirmation {
     case deleteCollection(LibraryCollection)
     case detach(AttachmentRecord)
     case purge(BibliographicReference)
+    case openLink(URL)
+
+    var isDestructive: Bool {
+        if case .openLink = self { return false }
+        return true
+    }
 
     var title: String {
         switch self {
         case .deleteCollection: "Delete Collection?"
         case .detach: "Remove Attachment?"
         case .purge: "Move to macOS Trash?"
+        case .openLink: "Open Link?"
         }
     }
     var action: String {
@@ -39,6 +46,7 @@ enum LibraryConfirmation {
         case .deleteCollection: "Delete Collection"
         case .detach: "Remove Attachment"
         case .purge: "Move to macOS Trash"
+        case .openLink: "Open Link"
         }
     }
     var detail: String {
@@ -49,6 +57,8 @@ enum LibraryConfirmation {
             "The managed copy of “\(attachment.originalFilename)” will be removed."
         case .purge(let reference):
             "A recovery folder for “\(reference.metadata.citationKey)” will be sent to macOS Trash."
+        case .openLink(let url):
+            url.absoluteString
         }
     }
 }
@@ -100,13 +110,13 @@ extension LibraryWindowModel {
     }
 
     func confirm(_ confirmation: LibraryConfirmation) {
-        run { [self] store in
-            switch confirmation {
-            case .deleteCollection(let collection):
-                try await store.deleteCollection(id: collection.id)
-            case .detach(let attachment):
-                try await store.detachAttachment(id: attachment.id)
-            case .purge(let reference):
+        switch confirmation {
+        case .deleteCollection(let collection):
+            run { try await $0.deleteCollection(id: collection.id) }
+        case .detach(let attachment):
+            run { try await $0.detachAttachment(id: attachment.id) }
+        case .purge(let reference):
+            run { [self] store in
                 let result = try await store.purgeReference(id: reference.id)
                 clearSelection(for: reference.id)
                 if !result.missingAttachments.isEmpty {
@@ -116,6 +126,8 @@ extension LibraryWindowModel {
                     )
                 }
             }
+        case .openLink(let url):
+            if !NSWorkspace.shared.open(url) { report(WindowError.cannotOpen(url.absoluteString)) }
         }
     }
 
