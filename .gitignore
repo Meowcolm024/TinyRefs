@@ -1,8 +1,10 @@
 .DS_Store
 /.build
+/rust/biblatex-bridge/target/
 /Packages
 xcuserdata/
 DerivedData/
 .swiftpm/configuration/registries.json
+.swiftpm/xcode/xcshareddata/xcschemes/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc

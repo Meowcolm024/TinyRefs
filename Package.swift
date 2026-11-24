@@ -1,29 +1,38 @@
 // swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
+import Foundation
 import PackageDescription
+
+let rustArchive = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("rust/biblatex-bridge/target/debug/libtinyrefs_biblatex.a")
+    .path
 
 let package = Package(
     name: "TinyRefs",
+    platforms: [.macOS(.v14)],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
-        .library(
-            name: "TinyRefs",
-            targets: ["TinyRefs"]
-        ),
+        .library(name: "TinyRefs", targets: ["TinyRefs"]),
+        .executable(name: "tinyrefs", targets: ["TinyRefsCLI"]),
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
+        .systemLibrary(name: "CBibLaTeX"),
         .target(
             name: "TinyRefs",
+            dependencies: ["CBibLaTeX"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", rustArchive]),
+            ],
         ),
+        .executableTarget(name: "TinyRefsCLI", dependencies: ["TinyRefs"]),
         .testTarget(
             name: "TinyRefsTests",
             dependencies: ["TinyRefs"],
+            resources: [.copy("Fixtures")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

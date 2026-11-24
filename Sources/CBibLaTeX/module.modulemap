@@ -1,0 +1,4 @@
+module CBibLaTeX [system] {
+    header "tinyrefs_biblatex.h"
+    export *
+}
