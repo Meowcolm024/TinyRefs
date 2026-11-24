@@ -138,7 +138,7 @@ The bridge exchanges entry types, citation keys, and field expressions as UTF-8 
 
 Import uses the crate's raw entry representation to preserve explicitly supplied fields. Expand file-local string macros into self-contained expressions, and report unresolved macros as import errors. Preserve link fields such as `crossref` and `xdata` because the crate's high-level parser resolves inheritance and drops `xdata`. [Rust `biblatex` parser source](https://github.com/typst/biblatex/blob/main/src/lib.rs)
 
-Import each file in a single database transaction, including memberships when the import targets a collection. A malformed entry, duplicate field name after normalization, or duplicate citation key within the file or library fails the import without changing the library. Successful imports assign new UUIDs. Export produces canonical BibLaTeX with both known and unknown fields. The round-trip guarantee covers entry data and value semantics. Formatting, comments, and standalone directives are outside that guarantee.
+Import each file in a single database transaction, including memberships when the import targets a collection. A malformed entry, duplicate field name after normalization, or duplicate citation key within the file or library fails the import without changing the library. Successful imports assign new UUIDs. Reference creation and editing reuse the serializer's BibLaTeX validation. Export produces canonical BibLaTeX with both known and unknown fields, and the same serializer can write a single reference for recovery. The round-trip guarantee covers entry data and value semantics. Formatting, comments, and standalone directives are outside that guarantee.
 
 Automatic export to a configured `.bib` file may be added later.
 
@@ -152,8 +152,10 @@ Commands identify references and attachments by UUID. Collection commands use ex
 
 | Command | Behavior |
 | --- | --- |
-| `import <file>` | Parse a `.bib` file and print the JSON preview. Transactional import will support `--collection <name>`. |
-| `export <file> [--collection <name>]` | Planned. Export active references from the library or from the named collection. |
+| `import <file> [--collection <name>]` | Import the entire `.bib` file in one transaction. Print one new reference UUID per line. |
+| `import <file> --json` | Print a JSON preview of the parsed bibliography without opening the library. |
+| `export [<file>] [--collection <name>]` | Export active references from the library or the named collection as BibLaTeX. Print to stdout when the destination is omitted and write atomically when supplied. |
+| `export --json [<file>] [--collection <name>]` | Export active references in the same metadata JSON format as the import preview. Print to stdout when the destination is omitted. |
 | `query [<text>]` | List references or search by citation key and bibliographic fields. Print tab-separated UUID, citation key, entry type, and title when available. |
 | `show <uuid>` | Print the reference's metadata, collections, and attachments as JSON, including attachment UUIDs. |
 | `key <uuid>` | Print the citation key on its own for scripting or copying. |

@@ -1,18 +1,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use biblatex::{Field, RawBibliography, RawChunk};
-use serde::Serialize;
 
-#[derive(Debug, Serialize)]
-pub(crate) struct Reference<'a> {
-    citation_key: &'a str,
-    entry_type: String,
-    fields: BTreeMap<String, String>,
-}
+use crate::reference::Reference;
 
-pub(crate) fn parse(source: &str) -> Result<Vec<Reference<'_>>, String> {
-    let bibliography = RawBibliography::parse(source)
-        .map_err(|error| format!("{} at byte {}.", error.kind, error.span.start))?;
+pub(crate) fn parse(source: &str) -> Result<Vec<Reference>, String> {
+    let bibliography = parse_raw(source)?;
     let macros: HashMap<_, _> = bibliography
         .abbreviations
         .into_iter()
@@ -22,6 +15,11 @@ pub(crate) fn parse(source: &str) -> Result<Vec<Reference<'_>>, String> {
     let mut keys = HashSet::new();
     let mut references = Vec::with_capacity(bibliography.entries.len());
     for entry in bibliography.entries {
+        let after_type = &source[entry.v.kind.span.end..];
+        let opening = source.len() - after_type.trim_start().len();
+        if source.as_bytes().get(opening) != Some(&b'{') {
+            return Err(format!("Expected opening brace at byte {opening}."));
+        }
         let key = entry.v.key.v;
         if key.is_empty() {
             return Err(format!(
@@ -44,7 +42,7 @@ pub(crate) fn parse(source: &str) -> Result<Vec<Reference<'_>>, String> {
         }
 
         references.push(Reference {
-            citation_key: key,
+            citation_key: key.to_owned(),
             entry_type: entry.v.kind.v.to_ascii_lowercase(),
             fields,
         });
@@ -52,7 +50,15 @@ pub(crate) fn parse(source: &str) -> Result<Vec<Reference<'_>>, String> {
     Ok(references)
 }
 
-fn expand_field(field: &Field<'_>, macros: &HashMap<String, Field<'_>>) -> Result<String, String> {
+pub(crate) fn parse_raw(source: &str) -> Result<RawBibliography<'_>, String> {
+    RawBibliography::parse(source)
+        .map_err(|error| format!("{} at byte {}.", error.kind, error.span.start))
+}
+
+pub(crate) fn expand_field(
+    field: &Field<'_>,
+    macros: &HashMap<String, Field<'_>>,
+) -> Result<String, String> {
     let mut expression = String::from("{");
     let mut frames = vec![(None, field.iter())];
     let mut active_macros = HashSet::new();
@@ -176,6 +182,7 @@ mod tests {
     #[test]
     fn rejects_invalid_entries() {
         assert!(parse("@book{k, title = {unfinished}").is_err());
+        assert!(parse("@book\"SystemT, title = {System T}}").is_err());
         assert!(
             parse("@book{k,} @book{k,}")
                 .unwrap_err()

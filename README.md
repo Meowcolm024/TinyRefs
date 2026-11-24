@@ -37,14 +37,24 @@ The CLI also supports editing and showing references, printing citation keys,
 moving references to Trash and restoring them, and managing nested collections
 and memberships. Use `<command> --help` for command-specific options.
 
-## Import a bibliography
+## Import and export a bibliography
 
 ```sh
-.build/debug/tinyrefs import "path/to/references.bib"
+"$tinyrefs" --database "scratch/reading library" import "path/to/references.bib" --collection "Type systems"
+"$tinyrefs" --database "scratch/reading library" export
+"$tinyrefs" --database "scratch/reading library" export references.bib
+"$tinyrefs" --database "scratch/reading library" export --json
+"$tinyrefs" import "path/to/references.bib" --json
 ```
 
-This first import milestone reads one UTF-8 `.bib` file and prints its
-bibliography as a JSON array. Each entry has a `citation_key`, an `entry_type`,
-and a `fields` object containing self-contained BibLaTeX expressions. Use
-brace-delimited entries such as `@book{key, title = {A book}}`. Parse and file
-errors go to stderr and return a nonzero exit status.
+`import` reads one UTF-8 `.bib` file in a single transaction and prints the
+new reference UUIDs, one per line. Use brace-delimited entries such as
+`@book{SystemT, title = {Gödel's System T}}`. An invalid entry or duplicate
+citation key rolls back the whole import.
+
+`export` prints active references as BibLaTeX to stdout. Supply a destination
+to write the output to a file. Use `--collection` to select a collection on
+import or export. `import --json` previews a bibliography without writing to
+the library. `export --json` switches the output format to a JSON array.
+Each JSON entry contains
+`citation_key`, `entry_type`, and `fields`.

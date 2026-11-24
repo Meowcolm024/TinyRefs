@@ -91,7 +91,7 @@ extension SQLiteLibrary {
         }
     }
 
-    private static func requireCollection(_ id: UUID, in db: Database) throws -> CollectionRow {
+    static func requireCollection(_ id: UUID, in db: Database) throws -> CollectionRow {
         guard let collection = try CollectionRow.fetchOne(db, key: id.databaseKey) else {
             throw LibraryError.collectionNotFound(id)
         }

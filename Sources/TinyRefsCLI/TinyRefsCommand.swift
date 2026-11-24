@@ -8,7 +8,7 @@ struct TinyRefsCommand: AsyncParsableCommand {
         commandName: "tinyrefs",
         abstract: "Manage a TinyRefs reference library.",
         subcommands: [
-            ImportCommand.self, Query.self, Show.self, Key.self, Create.self, Edit.self,
+            ImportCommand.self, ExportCommand.self, Query.self, Show.self, Key.self, Create.self, Edit.self,
             CollectionCommand.self, Trash.self, Restore.self,
         ]
     )
@@ -75,13 +75,16 @@ enum CLIError: LocalizedError {
     }
 }
 
-func printJSON(_ value: some Encodable) throws {
+func encodeJSON(_ value: some Encodable) throws -> Data {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     encoder.keyEncodingStrategy = .convertToSnakeCase
     encoder.dateEncodingStrategy = .iso8601
-    let data = try encoder.encode(value)
-    print(String(decoding: data, as: UTF8.self))
+    return try encoder.encode(value)
+}
+
+func printJSON(_ value: some Encodable) throws {
+    print(String(decoding: try encodeJSON(value), as: UTF8.self))
 }
 
 func displayID(_ id: UUID) -> String {

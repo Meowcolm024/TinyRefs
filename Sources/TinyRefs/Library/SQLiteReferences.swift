@@ -55,18 +55,30 @@ extension SQLiteLibrary {
     }
 
     @discardableResult
+    public func importBibLaTeX(
+        _ data: Data,
+        into collectionID: UUID? = nil
+    ) async throws -> [BibliographicReference] {
+        let entries = try BibLaTeX.references(from: data)
+        return try await database.write { db in
+            if let collectionID { _ = try Self.requireCollection(collectionID, in: db) }
+            return try entries.map { metadata in
+                let reference = try Self.insertReference(metadata, in: db)
+                if let collectionID {
+                    try MembershipRow(collectionID: collectionID, referenceID: reference.id).insert(db)
+                }
+                return reference
+            }
+        }
+    }
+
+    @discardableResult
     public func createReference(_ metadata: ReferenceMetadata) async throws -> BibliographicReference {
         let normalized = try Self.normalized(metadata)
-        let record = ReferenceRow(id: UUID(), citationKey: normalized.citationKey, entryType: normalized.entryType)
-        do {
-            try await database.write { db in
-                try record.insert(db)
-                try Self.insertFields(normalized.fields, for: record.id, in: db)
-            }
-        } catch let error as DatabaseError where error.extendedResultCode == .SQLITE_CONSTRAINT_UNIQUE {
-            throw LibraryError.duplicateCitationKey(normalized.citationKey)
+        _ = try BibLaTeX.serialize(normalized)
+        return try await database.write { db in
+            try Self.insertReference(normalized, in: db)
         }
-        return BibliographicReference(id: record.id, metadata: normalized)
     }
 
     @discardableResult
@@ -107,6 +119,7 @@ extension SQLiteLibrary {
             var record = try Self.requireReference(id, in: db)
             guard record.trashedAt == nil else { throw LibraryError.referenceInTrash(id) }
             let updated = try metadata(db, record)
+            _ = try BibLaTeX.serialize(updated)
             record.citationKey = updated.citationKey
             record.entryType = updated.entryType
             do {
@@ -145,6 +158,17 @@ extension SQLiteLibrary {
             record.trashedAt = trashed ? Int64(Date().timeIntervalSince1970) : nil
             try record.update(db, columns: [ReferenceRow.CodingKeys.trashedAt])
         }
+    }
+
+    private static func insertReference(_ metadata: ReferenceMetadata, in db: Database) throws -> BibliographicReference {
+        let record = ReferenceRow(id: UUID(), citationKey: metadata.citationKey, entryType: metadata.entryType)
+        do {
+            try record.insert(db)
+        } catch let error as DatabaseError where error.extendedResultCode == .SQLITE_CONSTRAINT_UNIQUE {
+            throw LibraryError.duplicateCitationKey(metadata.citationKey)
+        }
+        try insertFields(metadata.fields, for: record.id, in: db)
+        return BibliographicReference(id: record.id, metadata: metadata)
     }
 
     private static func insertFields(_ fields: [String: String], for id: UUID, in db: Database) throws {

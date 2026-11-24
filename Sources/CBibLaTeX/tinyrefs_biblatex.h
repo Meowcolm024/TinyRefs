@@ -8,7 +8,8 @@ enum {
     TINYREFS_BIBLATEX_OK = 0,
     TINYREFS_BIBLATEX_INVALID_INPUT = 1,
     TINYREFS_BIBLATEX_PARSE_ERROR = 2,
-    TINYREFS_BIBLATEX_INTERNAL_ERROR = 3
+    TINYREFS_BIBLATEX_INTERNAL_ERROR = 3,
+    TINYREFS_BIBLATEX_INVALID_METADATA = 4
 };
 
 typedef struct {
@@ -25,7 +26,16 @@ typedef struct {
  */
 TinyRefsBibLaTeXResult tinyrefs_biblatex_parse(const uint8_t * _Nullable input, size_t len);
 
-/* Consumes a result from tinyrefs_biblatex_parse and invalidates its buffer. */
+/*
+ * Borrows len readable bytes of UTF-8 reference JSON for the duration of the
+ * call. A null input is accepted for len == 0 and reports invalid JSON. The
+ * result contains UTF-8 BibLaTeX on success and a UTF-8 diagnostic otherwise.
+ * The bytes are read-only and have no NUL terminator. Release every result
+ * exactly once using tinyrefs_biblatex_free.
+ */
+TinyRefsBibLaTeXResult tinyrefs_biblatex_serialize(const uint8_t * _Nullable input, size_t len);
+
+/* Consumes a result from either operation and invalidates its buffer. */
 void tinyrefs_biblatex_free(TinyRefsBibLaTeXResult result);
 
 #endif

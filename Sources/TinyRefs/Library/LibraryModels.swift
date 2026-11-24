@@ -1,10 +1,16 @@
 import Foundation
 
-public struct ReferenceMetadata: Equatable, Sendable {
+public struct ReferenceMetadata: Codable, Equatable, Sendable {
     public var citationKey: String
     public var entryType: String
     /// Field names map to self-contained BibLaTeX expressions.
     public var fields: [String: String]
+
+    private enum CodingKeys: String, CodingKey {
+        case citationKey = "citation_key"
+        case entryType = "entry_type"
+        case fields
+    }
 
     public init(citationKey: String, entryType: String, fields: [String: String] = [:]) {
         self.citationKey = citationKey

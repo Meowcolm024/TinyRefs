@@ -3,6 +3,105 @@ import GRDB
 import Testing
 @testable import TinyRefs
 
+@Test func bibliographyRoundTripPreservesMetadataAndExportsActiveCollectionMembers() async throws {
+    try await withTemporaryLibrary { source, directory in
+        let fixture = try #require(Bundle.module.url(
+            forResource: "Haskell", withExtension: "bib", subdirectory: "Fixtures"
+        ))
+        let collection = try await source.createCollection(named: "Functional programming")
+        let imported = try await source.importBibLaTeX(Data(contentsOf: fixture), into: collection.id)
+        #expect(imported.map(\.metadata.citationKey) == ["Jones1992", "Vytiniotis2011", "Bernardy2017"])
+        let linearHaskell = try #require(imported.last)
+        #expect(linearHaskell.metadata.fields["month"] == "{December}")
+        #expect(linearHaskell.metadata.fields["issue_date"] == "{January 2018}")
+        for reference in imported {
+            #expect(try await source.memberships(for: reference.id) == [
+                CollectionMembership(collectionID: collection.id, referenceID: reference.id),
+            ])
+        }
+        let unfiled = try await source.createReference(ReferenceMetadata(citationKey: "SystemT", entryType: "book"))
+
+        try await source.moveReferenceToTrash(id: linearHaskell.id)
+        let active = try await source.exportBibLaTeX(fromCollection: collection.id)
+        #expect(try BibLaTeX.references(from: Data(active.utf8)).map(\.citationKey) == ["Jones1992", "Vytiniotis2011"])
+        let wholeLibrary = try await source.exportBibLaTeX()
+        let activeKeys = try BibLaTeX.references(from: Data(wholeLibrary.utf8)).map(\.citationKey)
+        #expect(activeKeys.contains(unfiled.metadata.citationKey))
+        #expect(!activeKeys.contains(linearHaskell.metadata.citationKey))
+
+        let archived = try await source.reference(id: linearHaskell.id)
+        let recovery = try BibLaTeX.serialize(#require(archived).metadata)
+        #expect(try BibLaTeX.references(from: Data(recovery.utf8)) == [linearHaskell.metadata])
+        try await source.restoreReference(id: linearHaskell.id)
+
+        let exported = try await source.exportBibLaTeX(fromCollection: collection.id)
+        let destination = try SQLiteLibrary(directory: directory.appendingPathComponent("Round trip", isDirectory: true))
+        let reimported = try await destination.importBibLaTeX(Data(exported.utf8))
+        #expect(reimported.map(\.metadata) == imported.map(\.metadata).sorted { $0.citationKey < $1.citationKey })
+        #expect(Set(reimported.map(\.id)).isDisjoint(with: imported.map(\.id)))
+        #expect(try await destination.references(in: .unfiled) == reimported)
+    }
+}
+
+@Test func bibliographyImportRollsBackOnDuplicateOrMalformedEntries() async throws {
+    try await withTemporaryLibrary { library, _ in
+        let collection = try await library.createCollection(named: "Type systems")
+        let reserved = try await library.createReference(ReferenceMetadata(citationKey: "SystemT", entryType: "book"))
+        try await library.moveReferenceToTrash(id: reserved.id)
+
+        let existingConflict = Data("@book{SystemF,} @book{SystemT,}".utf8)
+        await #expect(throws: LibraryError.duplicateCitationKey("SystemT")) {
+            try await library.importBibLaTeX(existingConflict, into: collection.id)
+        }
+
+        for text in [
+            "@book{SystemF,} @article{SystemF,}",
+            "@book{SystemF,} @article{LinearHaskell, title = {Linear Haskell}",
+            "@article{LinearHaskell, title = {Linear Haskell}, TITLE = {Duplicate}}",
+        ] {
+            await #expect(throws: BibLaTeX.BridgeError.self) {
+                try await library.importBibLaTeX(Data(text.utf8), into: collection.id)
+            }
+        }
+        let missingCollection = UUID()
+        await #expect(throws: LibraryError.collectionNotFound(missingCollection)) {
+            try await library.importBibLaTeX(Data("@book{SystemF,}".utf8), into: missingCollection)
+        }
+        #expect(try await library.references(in: .library).isEmpty)
+        #expect(try await library.references(in: .collection(collection.id)).isEmpty)
+        #expect(try await library.references(in: .trash).map(\.id) == [reserved.id])
+        #expect(try await library.database.read { try MembershipRow.fetchCount($0) } == 0)
+    }
+}
+
+@Test func invalidBibLaTeXMetadataCannotBeCreatedOrSaved() async throws {
+    try await withTemporaryLibrary { library, _ in
+        let valid = ReferenceMetadata(citationKey: "SystemT", entryType: "book", fields: ["title": "{System T}"])
+        var invalid = valid
+        invalid.citationKey = "System T"
+        await #expect(throws: BibLaTeX.BridgeError.self) {
+            try await library.createReference(invalid)
+        }
+        #expect(try await library.references(in: .library).isEmpty)
+
+        let reference = try await library.createReference(valid)
+        for changes in [
+            ReferenceChanges(entryType: "preamble"),
+            ReferenceChanges(fields: ["full title": "{Gödel’s System T}"]),
+            ReferenceChanges(fields: ["title": "{Gödel’s System T"]),
+            ReferenceChanges(fields: ["title": "undefinedMacro"]),
+        ] {
+            await #expect(throws: BibLaTeX.BridgeError.self) {
+                try await library.updateReference(id: reference.id, changes: changes)
+            }
+        }
+        await #expect(throws: BibLaTeX.BridgeError.self) {
+            try await library.updateReference(id: reference.id, metadata: invalid)
+        }
+        #expect(try await library.reference(id: reference.id) == reference)
+    }
+}
+
 @Test func libraryDirectoryKeepsTheDatabaseAndAttachmentsTogether() async throws {
     try await withTemporaryLibrary { defaultLibrary, directory in
         let selected = directory.appendingPathComponent("Gödel library", isDirectory: true)

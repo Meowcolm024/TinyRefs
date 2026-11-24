@@ -10,6 +10,9 @@ public protocol ReferenceReader: Sendable {
 }
 
 public protocol ReferenceStore: ReferenceReader {
+    /// Imports one UTF-8 bibliography and assigns optional memberships in one transaction.
+    @discardableResult
+    func importBibLaTeX(_ data: Data, into collectionID: UUID?) async throws -> [BibliographicReference]
     @discardableResult
     func createReference(_ metadata: ReferenceMetadata) async throws -> BibliographicReference
     /// Replaces the metadata and all fields of an active reference in one transaction.
@@ -20,6 +23,15 @@ public protocol ReferenceStore: ReferenceReader {
     func updateReference(id: UUID, changes: ReferenceChanges) async throws -> BibliographicReference
     func moveReferenceToTrash(id: UUID) async throws
     func restoreReference(id: UUID) async throws
+}
+
+extension ReferenceReader {
+    /// Exports active references from the whole library or a collection's direct membership.
+    public func exportBibLaTeX(fromCollection collectionID: UUID? = nil) async throws -> String {
+        let scope = collectionID.map(ReferenceScope.collection) ?? .library
+        let entries = try await references(in: scope, matching: nil)
+        return try BibLaTeX.serialize(entries.map(\.metadata))
+    }
 }
 
 public protocol CollectionStore: Sendable {

@@ -6,6 +6,7 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore {
         URL.applicationSupportDirectory.appendingPathComponent("TinyRefs", isDirectory: true)
     }
 
+    public let databaseURL: URL
     let database: DatabaseQueue
     static let containsText = DatabaseFunction("tinyrefs_contains_text", argumentCount: 2, pure: true) { values in
         guard let text = String.fromDatabaseValue(values[0]),
@@ -29,6 +30,7 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore {
 
         let database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         try Self.migrate(database)
+        self.databaseURL = databaseURL
         self.database = database
     }
 

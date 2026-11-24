@@ -22,7 +22,7 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 
 ## Stage 4 — Reference and collection CLI
 
-- Use Swift Argument Parser for `import`, `export`, `query`, `show`, `key`, `create`, `edit`, collection management and membership commands, `trash`, and `restore`. Use the shared library and support the app's default library directory and `--database <directory>`.
+- Use Swift Argument Parser for `import`, `export`, `query`, `show`, `key`, `create`, `edit`, collection management and membership commands, `trash`, and `restore`. Use the shared library and support the app's default library directory and `--database <directory>`. Support the JSON import preview and JSON export with `--json`.
 - Verify the CLI against a scratch library. Import into a named collection, find and edit entries by UUID, and export and reimport into a fresh library. Test collection names with spaces, conflicting names and keys, and membership changes. Check that a trashed reference is discoverable via `query --trash` and returns to its collection on restore.
 
 ## Stage 5 — Managed PDFs and deletion to macOS Trash
