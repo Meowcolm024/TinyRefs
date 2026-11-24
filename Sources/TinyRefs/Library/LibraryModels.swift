@@ -96,7 +96,7 @@ public struct PurgedReference: Sendable {
     }
 }
 
-public enum ReferenceScope: Equatable, Sendable {
+public enum ReferenceScope: Hashable, Sendable {
     case library
     case unfiled
     case trash
