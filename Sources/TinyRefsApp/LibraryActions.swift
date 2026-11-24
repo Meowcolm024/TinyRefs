@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 import TinyRefs
 import UniformTypeIdentifiers
 
@@ -77,7 +78,6 @@ extension LibraryWindowModel {
             _ = try await perform { try await $0.updateReference(id: original.id, changes: changes) }
         } else {
             let reference = try await perform { try await $0.createReference(metadata) }
-            closePDF()
             tableScope = .unfiled
             tableSelection = reference.id
             tableSearch = ""
@@ -106,7 +106,6 @@ extension LibraryWindowModel {
                 try await store.deleteCollection(id: collection.id)
             case .detach(let attachment):
                 try await store.detachAttachment(id: attachment.id)
-                if reader?.attachmentID == attachment.id { closePDF() }
             case .purge(let reference):
                 let result = try await store.purgeReference(id: reference.id)
                 clearSelection(for: reference.id)
@@ -162,9 +161,49 @@ extension LibraryWindowModel {
         Task {
             do {
                 let url = try await store.attachmentFile(for: attachment.referenceID, attachmentID: attachment.id)
-                guard NSWorkspace.shared.open(url) else { throw WindowError.cannotOpen(attachment.originalFilename) }
+                if attachment.isPDF {
+                    try await openInPreview(url)
+                } else if !NSWorkspace.shared.open(url) {
+                    throw WindowError.cannotOpen(attachment.originalFilename)
+                }
             } catch { report(error) }
         }
+    }
+
+    func openPDFInPreview(for reference: BibliographicReference, showInspectorIfNoPDF: Bool = false) {
+        guard let store else { return }
+        Task {
+            do {
+                if let url = try await firstAvailablePDF(for: reference.id, in: store) {
+                    try await openInPreview(url)
+                } else if showInspectorIfNoPDF {
+                    showsInspector = true
+                } else {
+                    throw WindowError.noAvailablePDF
+                }
+            } catch {
+                showsInspector = true
+                report(error)
+            }
+        }
+    }
+
+    func refreshPDFAvailability(for id: UUID) async {
+        guard let store else { return }
+        let requestedRevision = revision
+        let available: Bool
+        do {
+            available = try await firstAvailablePDF(for: id, in: store) != nil
+        } catch LibraryError.missingAttachmentFile {
+            available = false
+        } catch {
+            guard !Task.isCancelled, requestedRevision == revision else { return }
+            Logger(subsystem: "org.tinyrefs.app", category: "Attachments")
+                .debug("Could not check PDF availability: \(error.localizedDescription)")
+            available = false
+        }
+        guard !Task.isCancelled, requestedRevision == revision else { return }
+        if available { previewableReferences.insert(id) } else { previewableReferences.remove(id) }
     }
 
     func copyCitationKey(_ reference: BibliographicReference) {
@@ -173,8 +212,33 @@ extension LibraryWindowModel {
     }
 
     private func clearSelection(for id: UUID) {
-        if reader?.reference.id == id { closePDF() }
         if tableSelection == id { tableSelection = nil }
-        if readerSelection == id { readerSelection = nil }
     }
+}
+
+extension AttachmentRecord {
+    var isPDF: Bool { URL(fileURLWithPath: originalFilename).pathExtension.lowercased() == "pdf" }
+}
+
+@MainActor
+private func firstAvailablePDF(for referenceID: UUID, in store: any LibraryStore) async throws -> URL? {
+    let attachments = try await store.attachments(for: referenceID).filter(\.isPDF)
+    var firstMissingFilename: String?
+    for attachment in attachments {
+        do {
+            return try await store.attachmentFile(for: referenceID, attachmentID: attachment.id)
+        } catch LibraryError.missingAttachmentFile(let filename) {
+            firstMissingFilename = firstMissingFilename ?? filename
+        }
+    }
+    if let firstMissingFilename { throw LibraryError.missingAttachmentFile(firstMissingFilename) }
+    return nil
+}
+
+@MainActor
+private func openInPreview(_ url: URL) async throws {
+    guard let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") else {
+        throw WindowError.cannotOpen(url.lastPathComponent)
+    }
+    _ = try await NSWorkspace.shared.open([url], withApplicationAt: preview, configuration: .init())
 }

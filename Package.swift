@@ -11,7 +11,7 @@ let rustArchive = URL(fileURLWithPath: #filePath)
 
 let package = Package(
     name: "TinyRefs",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "TinyRefs", targets: ["TinyRefs"]),
         .executable(name: "TinyRefsApp", targets: ["TinyRefsApp"]),

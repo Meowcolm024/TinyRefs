@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import OSLog
 import TinyRefs
 
 typealias LibraryStore = ReferenceStore & CollectionStore & AttachmentStore
@@ -30,11 +29,6 @@ final class LibraryWindowModel {
         var id: UUID { collection.id }
     }
 
-    enum SidebarSelection: Hashable {
-        case scope(ReferenceScope)
-        case reference(UUID, ReferenceScope)
-    }
-
     var store: (any LibraryStore)?
     var opening = false
     var startupError: String?
@@ -56,34 +50,15 @@ final class LibraryWindowModel {
     var tableSearch = ""
     var tableSelection: UUID?
     var tableSort = [KeyPathComparator(\ReferenceRow.title, comparator: .localizedStandard)]
-    var reader: PDFSession?
-    var readerScope: ReferenceScope = .library
-    var readerSearch = ""
-    var readerSelection: UUID?
     var expandedCollections: Set<UUID> = []
-    var expandedReaderScopes: Set<ReferenceScope> = []
-    @ObservationIgnored private var readerRequest = UUID()
 
     init(store: (any LibraryStore)? = nil) { self.store = store }
 
-    var currentScope: ReferenceScope { reader == nil ? tableScope : readerScope }
-    var selectedID: UUID? { reader == nil ? tableSelection : readerSelection }
-    var search: String {
-        get { reader == nil ? tableSearch : readerSearch }
-        set {
-            if reader == nil { tableSearch = newValue } else { readerSearch = newValue }
-        }
-    }
-    var sidebarSelection: SidebarSelection {
-        if reader != nil, let readerSelection { return .reference(readerSelection, readerScope) }
-        return .scope(currentScope)
-    }
     var tableQuery: Query { Query(scope: tableScope, search: tableSearch, revision: revision) }
-    var detailsRequest: DetailsRequest { DetailsRequest(id: selectedID, revision: revision) }
+    var detailsRequest: DetailsRequest { DetailsRequest(id: tableSelection, revision: revision) }
     var selectedReference: BibliographicReference? {
-        guard let id = selectedID else { return nil }
+        guard let id = tableSelection else { return nil }
         if details?.reference.id == id { return details?.reference }
-        if reader?.reference.id == id { return reader?.reference }
         return tableRows.first(where: { $0.id == id })?.reference
     }
     var collectionTree: [CollectionNode] {
@@ -116,31 +91,21 @@ final class LibraryWindowModel {
                 tableScope = .library
                 tableSelection = nil
             }
-            if let id = readerScope.collectionID, !updated.contains(where: { $0.id == id }) {
-                readerScope = .library
-                readerSelection = nil
-                expandedReaderScopes.insert(.library)
-            }
         } catch { report(error) }
     }
 
     func loadTable(_ query: Query) async {
+        guard let store else { return }
         do {
-            let references = try await fetchReferences(query)
+            if !query.search.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
+            let references = try await store.references(in: query.scope, matching: query.search)
+            try Task.checkCancellation()
             guard query == tableQuery else { return }
             tableRows = references.map(ReferenceRow.init)
             if let tableSelection, !tableRows.contains(where: { $0.id == tableSelection }) {
                 self.tableSelection = nil
             }
         } catch { report(error) }
-    }
-
-    func fetchReferences(_ query: Query) async throws -> [BibliographicReference] {
-        guard let store else { return [] }
-        if !query.search.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
-        let result = try await store.references(in: query.scope, matching: query.search)
-        try Task.checkCancellation()
-        return result
     }
 
     func loadDetails(_ request: DetailsRequest) async {
@@ -151,10 +116,7 @@ final class LibraryWindowModel {
         if details?.reference.id != id { details = nil }
         do {
             guard let reference = try await store.reference(id: id) else {
-                if request == detailsRequest {
-                    details = nil
-                    if reader?.reference.id == id { closePDF() }
-                }
+                if request == detailsRequest { details = nil }
                 return
             }
             async let memberships = store.memberships(for: id)
@@ -169,77 +131,15 @@ final class LibraryWindowModel {
         } catch { report(error) }
     }
 
-    func refreshPDFAvailability(for id: UUID) async {
-        guard let store else { return }
-        let requestedRevision = revision
-        do {
-            let attachments = try await store.attachments(for: id).filter(\.isPDF)
-            var available = false
-            for attachment in attachments {
-                do {
-                    _ = try await store.attachmentFile(for: id, attachmentID: attachment.id)
-                    available = true
-                    break
-                } catch LibraryError.missingAttachmentFile {
-                    continue
-                }
-            }
-            guard !Task.isCancelled, requestedRevision == revision else { return }
-            if available { previewableReferences.insert(id) } else { previewableReferences.remove(id) }
-        } catch {
-            guard !Task.isCancelled, requestedRevision == revision else { return }
-            previewableReferences.remove(id)
-            Logger(subsystem: "org.tinyrefs.app", category: "Attachments")
-                .debug("Could not check PDF availability: \(error.localizedDescription)")
-        }
+    func selectScope(_ scope: ReferenceScope) {
+        guard tableScope != scope else { return }
+        tableScope = scope
+        tableSelection = nil
+        tableRows = []
     }
 
-    func select(_ selection: SidebarSelection) {
-        switch selection {
-        case .scope(let scope):
-            if reader == nil {
-                if tableScope != scope {
-                    tableScope = scope
-                    tableSelection = nil
-                    tableRows = []
-                }
-            } else {
-                readerScope = scope
-                readerSelection = nil
-                expandForReading(scope)
-            }
-        case .reference(let id, let scope):
-            guard reader != nil else { return }
-            readerScope = scope
-            readerSelection = id
-        }
-    }
-
-    func setExpanded(_ expanded: Bool, scope: ReferenceScope) {
-        if reader == nil, let id = scope.collectionID {
-            if expanded { expandedCollections.insert(id) } else { expandedCollections.remove(id) }
-        } else {
-            if expanded { expandedReaderScopes.insert(scope) } else { expandedReaderScopes.remove(scope) }
-        }
-    }
-
-    func isExpanded(_ scope: ReferenceScope) -> Bool {
-        if reader == nil, let id = scope.collectionID { return expandedCollections.contains(id) }
-        return expandedReaderScopes.contains(scope)
-    }
-
-    func expandForReading(_ scope: ReferenceScope) {
-        expandedReaderScopes.insert(scope)
-        var ancestor = scope.collectionID
-        while let id = ancestor, let collection = collections.first(where: { $0.id == id }) {
-            expandedReaderScopes.insert(.collection(id))
-            ancestor = collection.parentID
-        }
-    }
-
-    func focusReferenceSearch() {
-        if reader != nil { showsNavigator = true }
-        referenceSearchRequest += 1
+    func setExpanded(_ expanded: Bool, collectionID: UUID) {
+        if expanded { expandedCollections.insert(collectionID) } else { expandedCollections.remove(collectionID) }
     }
 
     func report(_ error: any Error) {
@@ -262,43 +162,6 @@ final class LibraryWindowModel {
         Task {
             do { try await perform(operation) } catch { report(error) }
         }
-    }
-
-    func openPDF(for reference: BibliographicReference, in scope: ReferenceScope, inPreview: Bool = false) {
-        guard let store else { return }
-        let request = UUID()
-        readerRequest = request
-        Task {
-            do {
-                let pdf = try await findPDF(for: reference, in: store)
-                guard request == readerRequest else { return }
-                guard let pdf else {
-                    showsInspector = true
-                    if inPreview { report(WindowError.noAvailablePDF) }
-                    return
-                }
-                if inPreview {
-                    try await openInPreview(pdf.url)
-                } else {
-                    if reader == nil { readerSearch = "" }
-                    readerScope = scope
-                    readerSelection = reference.id
-                    expandForReading(scope)
-                    reader = pdf
-                }
-            } catch {
-                guard request == readerRequest else { return }
-                showsInspector = true
-                report(error)
-            }
-        }
-    }
-
-    func closePDF() {
-        readerRequest = UUID()
-        reader = nil
-        readerSelection = nil
-        readerSearch = ""
     }
 }
 

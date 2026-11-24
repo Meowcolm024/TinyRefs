@@ -2,13 +2,13 @@
 
 ## Project
 
-A lightweight, native macOS reference manager built with SwiftUI, SwiftPM, SQLite, and PDFKit. A Rust library provides BibLaTeX parsing and serialization through a C ABI.
+A lightweight, native macOS reference manager built with SwiftUI, SwiftPM, and SQLite. The app opens PDFs in Preview. A Rust library provides BibLaTeX parsing and serialization through a C ABI.
 
 The project uses SwiftPM, **not an Xcode project**.
 
 ## Architecture
 
-- **SwiftUI:** Application UI, reference editing, library navigation, and PDF viewing.
+- **SwiftUI** handles the app interface, reference editing, and library navigation.
 - **Swift:** Reference models, SQLite persistence, attachment management, and application logic.
 - **Rust:** BibLaTeX parsing and serialization only.
 - **FFI:** A minimal C ABI with explicit ownership and error handling.

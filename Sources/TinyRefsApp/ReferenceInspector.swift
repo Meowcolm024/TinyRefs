@@ -5,38 +5,52 @@ struct ReferenceInspector: View {
     let model: LibraryWindowModel
 
     var body: some View {
-        if let reference = model.selectedReference {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 19) {
-                    header(for: reference)
-                    Divider()
-                    metadata(for: reference)
-                    if let details = model.details, details.reference.id == reference.id {
+        let reference = model.selectedReference
+        VStack(spacing: 0) {
+            if let reference {
+                header(for: reference)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 19) {
+                        actions(for: reference)
                         Divider()
-                        collections(for: details)
-                        Divider()
-                        attachments(for: details)
+                        metadata(for: reference)
+                        if let details = model.details, details.reference.id == reference.id {
+                            Divider()
+                            collections(for: details)
+                            Divider()
+                            attachments(for: details)
+                        }
                     }
+                    .padding([.horizontal, .bottom], 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .accessibilityLabel("Reference Inspector")
-            .modifier(FileDropHighlight(enabled: reference.trashedAt == nil && !model.working) {
-                model.dropFiles($0, on: reference)
-            })
-        } else {
-            ContentUnavailableView("No Reference Selected", systemImage: "doc.text")
                 .accessibilityLabel("Reference Inspector")
+            } else {
+                ContentUnavailableView("No Reference Selected", systemImage: "doc.text")
+                    .accessibilityLabel("Reference Inspector")
+            }
         }
+        .modifier(FileDropHighlight(enabled: reference.map { $0.trashedAt == nil && !model.working } ?? false) { urls in
+            guard let reference else { return false }
+            return model.dropFiles(urls, on: reference)
+        })
     }
 
     private func header(for reference: BibliographicReference) -> some View {
+        let title = ReferenceRow(reference).title
+        return Text(title)
+            .font(.title3.weight(.semibold))
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .help(title)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+    }
+
+    private func actions(for reference: BibliographicReference) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(ReferenceRow(reference).title)
-                .font(.title3.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
             Text(reference.metadata.entryType)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -49,7 +63,7 @@ struct ReferenceInspector: View {
                         .disabled(model.working)
                 }
                 Menu {
-                    ReferenceMenu(model: model, reference: reference, scope: model.currentScope)
+                    ReferenceMenu(model: model, reference: reference, scope: model.tableScope)
                 } label: {
                     Label("Reference Actions", systemImage: "ellipsis.circle")
                         .labelStyle(.iconOnly)
@@ -138,6 +152,7 @@ struct ReferenceInspector: View {
                 Text("No attachments").foregroundStyle(.secondary)
             }
             ForEach(details.attachments) { attachment in
+                let openTitle = attachment.isPDF ? "Open in Preview" : "Open in Default App"
                 HStack {
                     Button {
                         model.openAttachment(attachment)
@@ -146,10 +161,10 @@ struct ReferenceInspector: View {
                             .lineLimit(1)
                     }
                     .buttonStyle(.link)
-                    .help("Open in Default App")
+                    .help(openTitle)
                     Spacer()
                     Menu {
-                        Button("Open in Default App") { model.openAttachment(attachment) }
+                        Button(openTitle) { model.openAttachment(attachment) }
                         if details.reference.trashedAt == nil {
                             Button("Reassign Attachment…") { model.editor = .reassign(attachment) }.disabled(model.working)
                             Button("Remove Attachment…", role: .destructive) { model.confirmation = .detach(attachment) }

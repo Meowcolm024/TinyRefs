@@ -31,7 +31,6 @@ private struct LibraryBrowser: View {
     @Bindable var model: LibraryWindowModel
     @State private var pickingFiles = false
     @State private var pendingPicker: LibraryFilePicker?
-    @FocusState private var searchFocused: Bool
 
     var body: some View {
         let query = model.tableQuery
@@ -40,17 +39,21 @@ private struct LibraryBrowser: View {
             LibrarySidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 170, ideal: 215, max: 360)
         } detail: {
-            if let reader = model.reader {
-                PDFReaderPane(session: reader).id(reader.id)
-                    .navigationTitle(reader.url.lastPathComponent)
-            } else {
-                ReferenceTable(model: model)
-                    .navigationTitle(model.title(for: model.tableScope))
-            }
+            ReferenceTable(model: model)
+                .navigationTitle(model.title(for: model.tableScope))
         }
         .inspector(isPresented: $model.showsInspector) {
             ReferenceInspector(model: model)
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 480)
+                .toolbar {
+                    ToolbarSpacer(.flexible)
+                    ToolbarItem {
+                        let title = model.showsInspector ? "Hide Inspector" : "Show Inspector"
+                        Button(title, systemImage: "sidebar.right") { model.showsInspector.toggle() }
+                            .labelStyle(.iconOnly)
+                            .help(title)
+                    }
+                }
         }
         .toolbar { toolbar }
         .focusedSceneValue(\.libraryWindow, model)
@@ -59,10 +62,6 @@ private struct LibraryBrowser: View {
         .task(id: details) { await model.loadDetails(details) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.revision += 1
-        }
-        .onChange(of: model.referenceSearchRequest) { _, _ in searchFocused = true }
-        .onChange(of: searchFocused) { _, focused in
-            if focused, model.reader != nil { model.showsNavigator = true }
         }
         .onChange(of: model.filePicker) { _, choice in
             if let choice {
@@ -110,42 +109,188 @@ private struct LibraryBrowser: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup {
-            if let reader = model.reader {
-                Button("Close PDF", systemImage: "xmark") { model.closePDF() }
-                    .help("Close PDF")
-                Button("Find in PDF", systemImage: "doc.text.magnifyingglass") { reader.showFind() }
-                    .help("Find in PDF")
+            Button("New Reference", systemImage: "plus") { model.editor = .reference(nil) }
+                .help("New Reference")
+                .disabled(model.working)
+            Button("Import Bibliography", systemImage: "square.and.arrow.down") {
+                model.filePicker = .importBibliography(model.tableScope)
+            }
+            .help("Import Bibliography")
+            .disabled(!model.tableScope.allowsImport || model.working)
+        }
+
+        ToolbarItem {
+            ReferenceToolbarSearch(text: $model.tableSearch, focusRequest: model.referenceSearchRequest)
+        }
+        .sharedBackgroundVisibility(.hidden)
+    }
+}
+
+private struct ReferenceToolbarSearch: View {
+    @Binding var text: String
+    let focusRequest: Int
+    @State private var showsSearch = false
+    @State private var reservesSearchWidth = false
+    @State private var inputFocusRequest = 0
+    @State private var searchHasFocus = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let buttonSize: CGFloat = 32
+        let expandedWidth: CGFloat = 185
+
+        return HStack(spacing: 0) {
+            if showsSearch {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .frame(width: buttonSize)
+                    .accessibilityHidden(true)
             } else {
-                Button("New Reference", systemImage: "plus") { model.editor = .reference(nil) }
-                    .help("New Reference")
-                    .disabled(model.working)
-                Button("Import Bibliography", systemImage: "square.and.arrow.down") {
-                    model.filePicker = .importBibliography(model.currentScope)
+                Button(action: showSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: buttonSize, height: buttonSize)
+                        .contentShape(Rectangle())
                 }
-                .help("Import Bibliography")
-                .disabled(!model.currentScope.allowsImport || model.working)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Search References")
+                .help("Search References")
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search References", text: $model.search)
-                    .textFieldStyle(.plain)
-                    .focused($searchFocused)
-                    .accessibilityLabel("Search References")
-                if !model.search.isEmpty {
-                    Button("Clear Search", systemImage: "xmark.circle.fill") { model.search = "" }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 7)
-            .frame(width: 185, height: 23)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            searchField
+                .frame(width: expandedWidth - buttonSize)
+                .opacity(showsSearch ? 1 : 0)
+                .disabled(!showsSearch)
+                .accessibilityHidden(!showsSearch)
+        }
+        .frame(width: showsSearch ? expandedWidth : buttonSize, height: buttonSize, alignment: .leading)
+        .clipped()
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .overlay {
+            Capsule()
+                .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 2)
+                .opacity(showsSearch && searchHasFocus ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .frame(width: reservesSearchWidth ? expandedWidth : buttonSize, height: buttonSize, alignment: .trailing)
+        .onChange(of: focusRequest) { _, _ in showSearch() }
+    }
 
-            Button(model.showsInspector ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right") {
-                model.showsInspector.toggle()
+    private var searchField: some View {
+        HStack(spacing: 0) {
+            ToolbarSearchField(
+                text: $text, isEnabled: showsSearch, focusRequest: inputFocusRequest,
+                onFocusChange: { focused in
+                    searchHasFocus = focused
+                    if !focused, text.isEmpty { hideSearch() }
+                },
+                onEscape: {
+                    text = ""
+                    hideSearch()
+                }
+            )
+            if !text.isEmpty {
+                Button("Clear Search", systemImage: "xmark.circle.fill") {
+                    text = ""
+                    inputFocusRequest += 1
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 6)
             }
-            .help(model.showsInspector ? "Hide Inspector" : "Show Inspector")
+        }
+        .padding(.trailing, 10)
+    }
+
+    private var searchAnimation: Animation? {
+        reduceMotion ? nil : .smooth(duration: 0.28)
+    }
+
+    private func showSearch() {
+        // Give the capsule space to grow before the toolbar clips it to the item's width.
+        reservesSearchWidth = true
+        withAnimation(searchAnimation) { showsSearch = true }
+        inputFocusRequest += 1
+    }
+
+    private func hideSearch() {
+        guard showsSearch else { return }
+        withAnimation(searchAnimation) {
+            showsSearch = false
+            searchHasFocus = false
+        } completion: {
+            if !showsSearch { reservesSearchWidth = false }
+        }
+    }
+}
+
+private struct ToolbarSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let isEnabled: Bool
+    let focusRequest: Int
+    let onFocusChange: (Bool) -> Void
+    let onEscape: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.placeholderString = "Search References"
+        field.setAccessibilityLabel("Search References")
+        field.isEditable = true
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.maximumNumberOfLines = 1
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        let coordinator = context.coordinator
+        let needsFocus = focusRequest != coordinator.field.focusRequest
+        coordinator.field = self
+        field.isEnabled = isEnabled
+        if field.stringValue != text {
+            field.stringValue = text
+            field.currentEditor()?.string = text
+        }
+        if needsFocus, isEnabled {
+            Task { @MainActor [weak field, weak coordinator] in
+                guard let field, field.isEnabled, let coordinator, coordinator.field.focusRequest == focusRequest,
+                      field.window?.makeFirstResponder(field) == true else { return }
+                coordinator.field.onFocusChange(true)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(field: self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var field: ToolbarSearchField
+
+        init(field: ToolbarSearchField) { self.field = field }
+
+        func controlTextDidChange(_ notification: Notification) {
+            if let input = notification.object as? NSTextField { field.text = input.stringValue }
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            field.onFocusChange(true)
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let input = notification.object as? NSTextField else { return }
+            Task { @MainActor [weak self, weak input] in
+                guard let input, input.isEnabled, input.currentEditor() == nil else { return }
+                self?.field.onFocusChange(false)
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {
+            guard command == #selector(NSResponder.cancelOperation(_:)) else { return false }
+            field.onEscape()
+            control.window?.makeFirstResponder(nil)
+            return true
         }
     }
 }
@@ -180,15 +325,15 @@ struct LibraryCommands: Commands {
             Button("New Reference…") { model?.editor = .reference(nil) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model == nil || model?.working == true)
-            Button("New Collection…") { model?.editor = .newCollection(model?.currentScope.collectionID) }
+            Button("New Collection…") { model?.editor = .newCollection(model?.tableScope.collectionID) }
                 .disabled(model == nil || model?.working == true)
         }
         CommandGroup(after: .importExport) {
             Button("Import…") {
-                if let model { model.filePicker = .importBibliography(model.currentScope) }
+                if let model { model.filePicker = .importBibliography(model.tableScope) }
             }
             .keyboardShortcut("i", modifiers: .command)
-            .disabled(model?.currentScope.allowsImport != true || model?.working == true)
+            .disabled(model?.tableScope.allowsImport != true || model?.working == true)
         }
         CommandGroup(after: .sidebar) {
             Button(model?.showsNavigator == true ? "Hide Navigator" : "Show Navigator") {
@@ -202,16 +347,9 @@ struct LibraryCommands: Commands {
             .keyboardShortcut("i", modifiers: [.command, .option])
             .disabled(model == nil)
             Divider()
-            Button("Search References") { model?.focusReferenceSearch() }
-                .keyboardShortcut("f", modifiers: [.command, .option])
+            Button("Search References") { model?.referenceSearchRequest += 1 }
+                .keyboardShortcut("f", modifiers: .command)
                 .disabled(model == nil)
-            Button(model?.reader == nil ? "Find References" : "Find in PDF") {
-                if let reader = model?.reader { reader.showFind() } else { model?.focusReferenceSearch() }
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .disabled(model == nil)
-            Button("Close PDF") { model?.closePDF() }
-                .disabled(model?.reader == nil)
         }
         CommandGroup(after: .pasteboard) {
             Button("Copy Citation Key") {

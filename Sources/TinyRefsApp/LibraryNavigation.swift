@@ -89,7 +89,7 @@ struct ReferenceTable: View {
         } primaryAction: { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {
                 model.tableSelection = row.id
-                model.openPDF(for: row.reference, in: model.tableScope)
+                model.openPDFInPreview(for: row.reference, showInspectorIfNoPDF: true)
             }
         }
         .overlay {
@@ -111,27 +111,17 @@ struct LibrarySidebar: View {
     let model: LibraryWindowModel
 
     var body: some View {
-        List(selection: Binding<LibraryWindowModel.SidebarSelection?>(
-            get: { model.sidebarSelection },
-            set: { if let selection = $0 { model.select(selection) } }
+        List(selection: Binding<ReferenceScope?>(
+            get: { model.tableScope },
+            set: { if let scope = $0 { model.selectScope(scope) } }
         )) {
             Section {
                 ScopeBranch(model: model, scope: .library, icon: "books.vertical")
                 ScopeBranch(model: model, scope: .unfiled, icon: "tray")
             }
-            Section {
+            Section("Collections") {
                 ForEach(model.collectionTree) { node in
                     ScopeBranch(model: model, scope: .collection(node.id), icon: "folder", children: node.children)
-                }
-            } header: {
-                HStack {
-                    Text("Collections")
-                    Spacer()
-                    Button("New Collection", systemImage: "plus") { model.editor = .newCollection(nil) }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .help("New Collection")
-                        .disabled(model.working)
                 }
             }
             Section {
@@ -151,28 +141,26 @@ private struct ScopeBranch: View {
     @State private var receivingReferences = false
 
     var body: some View {
-        if !children.isEmpty || model.reader != nil {
+        if let id = scope.collectionID, !children.isEmpty {
             DisclosureGroup(isExpanded: Binding(
-                get: { model.isExpanded(scope) },
-                set: { model.setExpanded($0, scope: scope) }
+                get: { model.expandedCollections.contains(id) },
+                set: { model.setExpanded($0, collectionID: id) }
             )) {
-                if model.reader != nil, model.isExpanded(scope) {
-                    ReaderReferenceRows(model: model, scope: scope)
-                }
                 ForEach(children) { child in
                     ScopeBranch(model: model, scope: .collection(child.id), icon: "folder", children: child.children)
                 }
             } label: {
-                label
+                label(leadingPadding: 6)
             }
-            .tag(LibraryWindowModel.SidebarSelection.scope(scope))
+            .tag(scope)
         } else {
-            label.tag(LibraryWindowModel.SidebarSelection.scope(scope))
+            label().tag(scope)
         }
     }
 
-    private var label: some View {
+    private func label(leadingPadding: CGFloat = 0) -> some View {
         Label(model.title(for: scope), systemImage: icon)
+            .padding(.leading, leadingPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .contextMenu {
@@ -203,40 +191,6 @@ private struct ScopeBranch: View {
     }
 }
 
-private struct ReaderReferenceRows: View {
-    let model: LibraryWindowModel
-    let scope: ReferenceScope
-    @State private var references: [BibliographicReference] = []
-
-    var body: some View {
-        let query = LibraryWindowModel.Query(scope: scope, search: model.readerSearch, revision: model.revision)
-        ForEach(references) { reference in
-            row(for: reference)
-                .tag(LibraryWindowModel.SidebarSelection.reference(reference.id, scope))
-        }
-        .task(id: query) {
-            do {
-                references = try await model.fetchReferences(query)
-            } catch { model.report(error) }
-        }
-    }
-
-    private func row(for reference: BibliographicReference) -> some View {
-        Label(ReferenceRow(reference).title, systemImage: "doc")
-            .lineLimit(1)
-            .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture(count: 2).onEnded {
-                model.select(.reference(reference.id, scope))
-                model.openPDF(for: reference, in: scope)
-            })
-            .contextMenu { ReferenceMenu(model: model, reference: reference, scope: scope) }
-            .task(id: model.revision) { await model.refreshPDFAvailability(for: reference.id) }
-            .modifier(FileDropHighlight(enabled: reference.trashedAt == nil && !model.working) {
-                model.dropFiles($0, on: reference)
-            })
-    }
-}
-
 struct FileDropHighlight: ViewModifier {
     let enabled: Bool
     let accept: ([URL]) -> Bool
@@ -263,7 +217,7 @@ struct ReferenceMenu: View {
 
     var body: some View {
         Button("Copy Citation Key") { model.copyCitationKey(reference) }
-        Button("Open PDF in Preview") { model.openPDF(for: reference, in: scope, inPreview: true) }
+        Button("Open PDF in Preview") { model.openPDFInPreview(for: reference) }
             .disabled(!model.previewableReferences.contains(reference.id))
         Divider()
         if reference.trashedAt == nil {

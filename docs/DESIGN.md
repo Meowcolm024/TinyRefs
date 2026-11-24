@@ -2,7 +2,7 @@
 
 ## Overview
 
-A lightweight, native macOS reference manager inspired by Zotero. The application manages bibliographic references, imports and exports BibLaTeX files, and supports file attachments and native PDF viewing.
+A lightweight, native macOS reference manager inspired by Zotero. The application manages bibliographic references, imports and exports BibLaTeX files, and opens PDF attachments in Preview.
 
 The design prioritizes simplicity, local storage, and integration with LaTeX workflows.
 
@@ -13,7 +13,6 @@ See the [implementation plan](IMPLEMENTATION_PLAN.md) for the build order and ve
 - **SwiftUI:** Native macOS interface.
 - **SwiftPM:** Build system and dependency management.
 - **SQLite (GRDB):** Persistent reference metadata.
-- **PDFKit:** PDF viewing.
 - **Rust (`biblatex` crate):** BibLaTeX parsing and serialization.
 - **C ABI:** FFI between Swift and Rust.
 
@@ -23,7 +22,7 @@ SwiftPM builds the SwiftUI application and a `tinyrefs` command-line executable.
 
 The application has three main layers:
 
-1. **UI:** SwiftUI views for browsing, editing, and reading.
+1. **UI** uses SwiftUI views for browsing and editing references and managing attachments.
 2. **Application:** A shared Swift library for reference management, persistence, attachments, and import/export. The SwiftUI application and CLI both call this layer.
 3. **BibLaTeX bridge:** Rust library exposed through a small C ABI.
 
@@ -97,13 +96,13 @@ After macOS accepts the folder, remove the reference row in a database transacti
 
 Use a native macOS window with a unified toolbar, resizable split panes, and SF Symbols. Take layout cues from Xcode's navigator, editor, and inspector. The toolbar has independent show and hide buttons for the navigator on the left and inspector on the right. Both controls are also available in the **View** menu. [Apple's macOS toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars) · [Xcode window layout](https://developer.apple.com/documentation/xcode/configuring-the-xcode-project-window)
 
-| Pane | Browsing references | Reading a PDF |
-| --- | --- | --- |
-| Left navigator | Select **Library**, **Unfiled Items**, a collection in the hierarchy, or **Trash**. Create, rename, move, and delete collections here. | Expand a navigator item with a disclosure triangle to browse its references as indented rows. Expand the current branch when the reader opens. |
-| Center workspace | Sort references in the current navigator selection. Select a row to show its details in the inspector. | Show the PDF in the same window. Double-click another reference in the navigator to open its PDF in the center. |
-| Right inspector | View metadata, collection memberships, and attachments. Edit metadata and manage attachments for active references. | Show the inspector for the selected navigator row. |
+| Pane | Purpose |
+| --- | --- |
+| Left navigator | Select **Library**, **Unfiled Items**, a collection in the hierarchy, or **Trash**. Expand collections to see their subcollections. Create, rename, move, and delete collections here. |
+| Center workspace | Browse and sort references in the current navigator selection. Select a row to show its details in the inspector. |
+| Right inspector | View metadata, collection memberships, and attachments. Edit metadata and manage attachments for active references. |
 
-The toolbar's **Search References** field uses a magnifying-glass icon. It filters the center reference list while browsing and filters reference rows in the navigator while reading. Focusing reference search in the reader reveals the navigator if it is hidden. Use **Find in PDF** to search within the open document.
+Click the toolbar's magnifying glass or press **Command-F** to expand and focus **Search References**. It filters the center reference list in the current scope. Press **Escape** in the field to clear the filter and collapse search.
 
 In a collection, **Remove from Collection** removes the reference's membership.
 
@@ -114,20 +113,16 @@ Use **Move to Trash** on an active reference to send it to the library Trash. In
 | Dragged item | Drop target | Result |
 | --- | --- | --- |
 | BibTeX or BibLaTeX `.bib` files from Finder | **Library**, **Unfiled Items**, a collection, or the center reference list for any of those views | Run the shared importer. A drop on a collection adds the imported references to it. A drop on the center reference list uses the current navigator selection. |
-| Regular files from Finder | An active reference row in the center list or navigator, or its attachment area in the inspector | Copy each file into the managed library and attach it to the target reference. |
+| Regular files from Finder | An active reference row in the center list or its attachment area in the inspector | Copy each file into the managed library and attach it to the target reference. |
 | Active reference rows | A collection in the navigator | Add the references to that collection while keeping their existing memberships. |
 
 Highlight valid drop targets during a drag and show import or attachment errors in the window. **File > Import** adds references to the selected collection when applicable. Otherwise, imported references appear in Unfiled Items. **Add Attachment** in the inspector attaches a file to the selected active reference.
 
 ### Opening PDFs
 
-Double-click a reference row to replace the center list with its first available PDF in the native PDFKit reader. Check attachments in the order shown in the inspector, which sorts by filename and uses the attachment UUID to break ties. When there is no available PDF, double-click shows the inspector. From there, users can open attachments in their default macOS application. The inspector reports missing files.
+Double-click a reference row or choose **Open PDF in Preview** in the reference menu to open its first available PDF in Preview. Check attachments in the order shown in the inspector, which sorts by filename and uses the attachment UUID to break ties. When there is no available PDF, double-click shows the inspector.
 
-The reader toolbar has a close icon labeled **Close PDF**. It restores the center reference list, including its previous collection, search, sort order, and selection.
-
-Right-click a reference in the center list or navigator and choose **Open PDF in Preview** to open its first available PDF in the macOS Preview app. Enable this action for references with an available PDF.
-
-The PDFKit reader supports navigation, zooming, selection, and search.
+Opening an attachment from the inspector sends PDFs to Preview and other files to their default macOS applications. The app reports missing files when opening them.
 
 ## Import and Export
 
@@ -201,7 +196,7 @@ The first version supports:
 
 1. Creating, editing, searching, trashing, and restoring references, with a recovery folder sent to macOS Trash on final removal.
 2. Importing and exporting `.bib` files.
-3. Adding, reassigning, removing, and opening file attachments. View PDFs inside TinyRefs.
+3. Adding, reassigning, removing, and opening file attachments, with PDFs opened in Preview.
 4. Organizing references into collections and finding uncategorized references in Unfiled Items.
 5. Copying citation keys to the clipboard.
 6. Managing references, attachments, collections, and Trash from the CLI, with BibLaTeX import and export.

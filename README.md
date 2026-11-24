@@ -4,14 +4,22 @@ A minimal reference manager for macOS.
 
 ## Build and test
 
-Use macOS 14 or later, Swift 6.4 or later, and a Rust toolchain that supports
-the 2024 edition.
+TinyRefs supports macOS 26 and later. Building it requires Swift 6.4 or later,
+a macOS 26 or later SDK, and a Rust toolchain that supports the 2024 edition.
 
 Run `make build` to build the Rust static library and link the SwiftPM
 executables `TinyRefsApp` and `tinyrefs`. Run `make test` to run the Rust and
-Swift test suites.
-When running SwiftPM directly, run `make rust` first to create the archive it
-links.
+Swift test suites. The Makefile selects the macOS SDK through `xcrun` unless
+`SDKROOT` is already set.
+
+For direct SwiftPM builds, select the SDK and build the Rust archive first.
+
+```sh
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+make rust
+swift build
+swift test
+```
 
 ## Library storage
 

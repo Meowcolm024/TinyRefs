@@ -38,11 +38,11 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 - Connect editing, collection management, **Move to Trash**, **Restore**, and **Move to macOS Trash** to the shared library. Add **Copy Citation Key** for the selected reference.
 - Verify that moving between scopes updates the center list, search and sorting use the current scope, and panel toggles remain easy to reach. Check that removing a collection membership can move an active entry to Unfiled Items.
 
-## Stage 7 — Drag and drop and PDF reading
+## Stage 7 — Drag and drop and opening PDFs
 
 - Connect Finder `.bib` drops to the importer and file drops on a reference to managed attachments. Allow dragging reference rows to collections. Use the same operations from menu and inspector actions.
-- Open a PDF in the center on double-click and show references as indented rows under expandable navigator items. Add **Close PDF** to restore the table and **Open PDF in Preview** to the reference context menu.
-- Verify valid and invalid drops, a drop onto an unselected reference, and import into a specific collection. Check the first available attachment, missing PDFs, and PDFKit navigation, zoom, text selection, and search. Verify that closing a PDF restores the previous table state and that the context menu opens the correct attachment in Preview.
+- Open the first available PDF in Preview from a reference row or its context menu. Open PDF attachments directly from the inspector and use the default macOS app for other file types.
+- Verify valid and invalid drops, a drop onto an unselected reference, and import into a specific collection. Check Preview routing from the table and inspector, selection of the first available PDF, and missing-file handling.
 
 ## Stage 8 — Packaging and acceptance
 
