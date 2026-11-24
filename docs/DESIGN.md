@@ -2,7 +2,7 @@
 
 ## Overview
 
-A lightweight, native macOS reference manager inspired by Zotero. The application manages bibliographic references, imports and exports BibLaTeX files, and supports PDF attachments and viewing.
+A lightweight, native macOS reference manager inspired by Zotero. The application manages bibliographic references, imports and exports BibLaTeX files, and supports file attachments and native PDF viewing.
 
 The design prioritizes simplicity, local storage, and integration with LaTeX workflows.
 
@@ -72,20 +72,22 @@ The library consists of an SQLite database and a managed attachment directory.
 ```text
 Library/
 ├── library.sqlite
+├── .library.lock
+├── .staging/
 └── attachments/
     └── <attachment-uuid>/
-        └── document.pdf
+        └── <original-filename>
 ```
 
 The default library directory is `~/Library/Application Support/TinyRefs`. The app and CLI share that default. Each library directory holds its own database and attachment files.
 
-Each attachment belongs to one reference, and a reference can have any number of PDFs. The database stores `attachments/<attachment-uuid>/document.pdf` relative to the library root. The app uses `original_filename` as the display label and generates the storage path from the attachment UUID.
+Each attachment belongs to one reference, and a reference can have any number of attached regular files. The database stores the path relative to the library root and the original display filename. New copies use `attachments/<attachment-uuid>/<original-filename>`. Reassigning an attachment between active references updates its owner and preserves its UUID, managed path, and contents.
 
-When adding a PDF, stage the copy inside the library, move it to its final path, and then commit the attachment row. When removing an individual attachment, commit the database deletion before removing its file. Serialize attachment writes, trash actions, and recovery across processes with a library lock. On reopening an existing library, remove abandoned staging files and unreferenced attachment directories in the managed layout. Keep records for missing PDFs so the app can report which files are unavailable.
+When adding a file, stage the copy inside the library, move it to its final path, and then commit the attachment row. When removing an attachment, commit the database deletion before removing its managed copy. Serialize attachment writes, trash actions, and recovery across processes with an exclusive macOS file lock. On reopening an existing library, remove abandoned staging files and unreferenced attachment directories in the managed layout. Keep records for missing files so callers can report them.
 
 ### Moving an entry to macOS Trash
 
-When the user chooses **Move to macOS Trash** for an entry in the library Trash, stage one recovery folder named `TinyRefs-<reference-uuid>`. Use the shared exporter to write the entry and all its fields to `reference.bib`. Copy each available managed PDF into `attachments/<attachment-uuid>/` under its original basename. Report attachments that were already missing.
+When the user chooses **Move to macOS Trash** for an entry in the library Trash, stage one recovery folder named `TinyRefs-<reference-uuid>`. Use the shared exporter to write the entry and all its fields to `reference.bib`. Copy each available managed file into `attachments/<attachment-uuid>/` under its original basename. Report attachments that were already missing.
 
 Move the complete folder to macOS Trash with `FileManager.trashItem`. An export, copy, or trash operation error leaves the reference and its managed files in the library Trash. [Foundation trash API](https://developer.apple.com/documentation/foundation/filemanager/trashitem(at:resultingitemurl:))
 
@@ -99,7 +101,7 @@ Use a native macOS window with a unified toolbar, resizable split panes, and SF 
 | --- | --- | --- |
 | Left navigator | Select **Library**, **Unfiled Items**, a collection in the hierarchy, or **Trash**. Create, rename, move, and delete collections here. | Expand a navigator item with a disclosure triangle to browse its references as indented rows. Expand the current branch when the reader opens. |
 | Center workspace | Sort references in the current navigator selection. Select a row to show its details in the inspector. | Show the PDF in the same window. Double-click another reference in the navigator to open its PDF in the center. |
-| Right inspector | View metadata, collection memberships, and PDFs. Edit metadata and manage attachments for active references. | Show the inspector for the selected navigator row. |
+| Right inspector | View metadata, collection memberships, and attachments. Edit metadata and manage attachments for active references. | Show the inspector for the selected navigator row. |
 
 The toolbar's **Search References** field uses a magnifying-glass icon. It filters the center reference list while browsing and filters reference rows in the navigator while reading. Focusing reference search in the reader reveals the navigator if it is hidden. Use **Find in PDF** to search within the open document.
 
@@ -112,14 +114,14 @@ Use **Move to Trash** on an active reference to send it to the library Trash. In
 | Dragged item | Drop target | Result |
 | --- | --- | --- |
 | BibTeX or BibLaTeX `.bib` files from Finder | **Library**, **Unfiled Items**, a collection, or the center reference list for any of those views | Run the shared importer. A drop on a collection adds the imported references to it. A drop on the center reference list uses the current navigator selection. |
-| `.pdf` files from Finder | An active reference row in the center list or navigator, or its attachment area in the inspector | Copy each file into the managed library and attach it to the target reference. |
+| Regular files from Finder | An active reference row in the center list or navigator, or its attachment area in the inspector | Copy each file into the managed library and attach it to the target reference. |
 | Active reference rows | A collection in the navigator | Add the references to that collection while keeping their existing memberships. |
 
-Highlight valid drop targets during a drag and show import or attachment errors in the window. **File > Import** adds references to the selected collection when applicable. Otherwise, imported references appear in Unfiled Items. **Add PDF** in the inspector attaches a file to the selected active reference.
+Highlight valid drop targets during a drag and show import or attachment errors in the window. **File > Import** adds references to the selected collection when applicable. Otherwise, imported references appear in Unfiled Items. **Add Attachment** in the inspector attaches a file to the selected active reference.
 
 ### Opening PDFs
 
-Double-click a reference row to replace the center list with its first available PDF in the native PDFKit reader. Check attachments in the order shown in the inspector, which sorts by filename and uses the attachment UUID to break ties. The inspector lets users open any attachment directly. If the reference has no attachments, double-click shows its inspector. If it has attachment records but all files are missing, the app reports that the PDFs are unavailable.
+Double-click a reference row to replace the center list with its first available PDF in the native PDFKit reader. Check attachments in the order shown in the inspector, which sorts by filename and uses the attachment UUID to break ties. When there is no available PDF, double-click shows the inspector. From there, users can open attachments in their default macOS application. The inspector reports missing files.
 
 The reader toolbar has a close icon labeled **Close PDF**. It restores the center reference list, including its previous collection, search, sort order, and selection.
 
@@ -168,9 +170,10 @@ Commands identify references and attachments by UUID. Collection commands use ex
 
 | Command | Behavior |
 | --- | --- |
-| `attach <uuid> <file.pdf>` | Copy a PDF into the managed library for an active reference and print the attachment UUID. |
+| `attach <uuid> <file>` | Copy a regular file into the managed library for an active reference and print the attachment UUID. |
 | `detach <attachment-uuid>` | Remove the attachment from its active reference and clean up the managed file. |
-| `open <uuid> [--attachment <attachment-uuid>]` | Open the first available PDF in Preview, or open a specific attachment of that reference. |
+| `reassign <attachment-uuid> <uuid>` | Move the attachment to another active reference while preserving the file and attachment UUID. |
+| `open <uuid> [--attachment <attachment-uuid>]` | Open the first available file or the specified attachment in its default macOS application. |
 
 ### Collections
 
@@ -190,7 +193,7 @@ Commands identify references and attachments by UUID. Collection commands use ex
 | --- | --- |
 | `trash <uuid>` | Move an active reference to the library Trash. |
 | `restore <uuid>` | Restore a trashed reference. |
-| `purge <uuid>` | Send a trashed reference's `.bib` file and available PDFs to macOS Trash as a recovery folder, then remove the library record. |
+| `purge <uuid>` | Send a trashed reference's `.bib` file and available attachments to macOS Trash as a recovery folder, then remove the library record. |
 
 ## Initial Scope
 
@@ -198,7 +201,7 @@ The first version supports:
 
 1. Creating, editing, searching, trashing, and restoring references, with a recovery folder sent to macOS Trash on final removal.
 2. Importing and exporting `.bib` files.
-3. Adding, removing, and viewing PDF attachments.
+3. Adding, reassigning, removing, and opening file attachments. View PDFs inside TinyRefs.
 4. Organizing references into collections and finding uncategorized references in Unfiled Items.
 5. Copying citation keys to the clipboard.
 6. Managing references, attachments, collections, and Trash from the CLI, with BibLaTeX import and export.

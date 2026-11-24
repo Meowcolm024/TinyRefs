@@ -86,6 +86,16 @@ public struct AttachmentRecord: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct PurgedReference: Sendable {
+    public let recoveryURL: URL?
+    public let missingAttachments: [AttachmentRecord]
+
+    public init(recoveryURL: URL?, missingAttachments: [AttachmentRecord]) {
+        self.recoveryURL = recoveryURL
+        self.missingAttachments = missingAttachments
+    }
+}
+
 public enum ReferenceScope: Equatable, Sendable {
     case library
     case unfiled
@@ -96,6 +106,13 @@ public enum ReferenceScope: Equatable, Sendable {
 public enum LibraryError: LocalizedError, Equatable, Sendable {
     case referenceNotFound(UUID)
     case referenceInTrash(UUID)
+    case referenceNotInTrash(UUID)
+    case attachmentNotFound(UUID)
+    case missingAttachmentFile(String)
+    case noAvailableAttachments(UUID)
+    case invalidAttachmentSource(String)
+    case invalidManagedPath(String)
+    case fileCleanupFailed(String, String)
     case collectionNotFound(UUID)
     case duplicateCitationKey(String)
     case duplicateCollectionName(String)
@@ -112,6 +129,20 @@ public enum LibraryError: LocalizedError, Equatable, Sendable {
             "Reference \(id.databaseKey) was not found."
         case .referenceInTrash(let id):
             "Restore reference \(id.databaseKey) from Trash before editing it."
+        case .referenceNotInTrash(let id):
+            "Move reference \(id.databaseKey) to the library Trash before purging it."
+        case .attachmentNotFound(let id):
+            "Attachment \(id.databaseKey) was not found."
+        case .missingAttachmentFile(let name):
+            "The managed file for attachment '\(name)' is missing."
+        case .noAvailableAttachments(let id):
+            "Reference \(id.databaseKey) has no available attachments."
+        case .invalidAttachmentSource(let path):
+            "Attachment source '\(path)' must be a readable regular file."
+        case .invalidManagedPath(let path):
+            "Unexpected file or directory at managed path '\(path)'."
+        case .fileCleanupFailed(let path, let message):
+            "The library change was saved. Cleanup of '\(path)' failed and will be retried when the library opens. \(message)"
         case .collectionNotFound(let id):
             "Collection \(id.databaseKey) was not found."
         case .duplicateCitationKey(let key):

@@ -25,11 +25,11 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 - Use Swift Argument Parser for `import`, `export`, `query`, `show`, `key`, `create`, `edit`, collection management and membership commands, `trash`, and `restore`. Use the shared library and support the app's default library directory and `--database <directory>`. Support the JSON import preview and JSON export with `--json`.
 - Verify the CLI against a scratch library. Import into a named collection, find and edit entries by UUID, and export and reimport into a fresh library. Test collection names with spaces, conflicting names and keys, and membership changes. Check that a trashed reference is discoverable via `query --trash` and returns to its collection on restore.
 
-## Stage 5 — Managed PDFs and deletion to macOS Trash
+## Stage 5 — Managed attachments and deletion to macOS Trash
 
-- Implement staged PDF copies, attachment lookup and removal, and startup cleanup under the library lock. Use UUID-based attachment paths and retain the original display filename.
-- Implement **Move to macOS Trash** for references in the library Trash. Package `reference.bib` and the available PDFs together, send the folder to macOS Trash, then remove the database row and managed copies.
-- Add `attach`, `detach`, `open`, and `purge` to the CLI when the corresponding shared operations are available. Verify that `show` reports attachment UUIDs and that `open` can select one attachment.
+- Implement staged file copies, attachment lookup, reassignment, removal, and startup cleanup under the library lock. Accept regular files of any type and use UUID-based paths with the original filename.
+- Implement **Move to macOS Trash** for references in the library Trash. Package `reference.bib` and the available attachments together, send the folder to macOS Trash, then remove the database row and managed copies.
+- Add `attach`, `detach`, `reassign`, `open`, and `purge` to the CLI. Verify that `show` reports attachment UUIDs and that `open` can select one attachment for its default macOS application.
 - Use a temporary library and a simulated Trash handoff to test export, copy, and handoff failures. Verify that a failed attempt can be retried, that an interruption before the database commit leaves the entry restorable, and that startup cleans up managed copies left after commit.
 
 ## Stage 6 — Native macOS browsing and editing
@@ -40,7 +40,7 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 
 ## Stage 7 — Drag and drop and PDF reading
 
-- Connect Finder `.bib` drops to the importer and PDF drops to the target reference. Allow dragging reference rows to collections. Use the same operations from menu and inspector actions.
+- Connect Finder `.bib` drops to the importer and file drops on a reference to managed attachments. Allow dragging reference rows to collections. Use the same operations from menu and inspector actions.
 - Open a PDF in the center on double-click and show references as indented rows under expandable navigator items. Add **Close PDF** to restore the table and **Open PDF in Preview** to the reference context menu.
 - Verify valid and invalid drops, a drop onto an unselected reference, and import into a specific collection. Check the first available attachment, missing PDFs, and PDFKit navigation, zoom, text selection, and search. Verify that closing a PDF restores the previous table state and that the context menu opens the correct attachment in Preview.
 

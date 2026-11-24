@@ -58,3 +58,15 @@ import or export. `import --json` previews a bibliography without writing to
 the library. `export --json` switches the output format to a JSON array.
 Each JSON entry contains
 `citation_key`, `entry_type`, and `fields`.
+
+## Manage attachments
+
+Attach any regular file with `tinyrefs attach <reference-uuid> <file>`. TinyRefs
+prints the attachment UUID and keeps a managed copy under `attachments/`. Use
+`show <reference-uuid>` to list attachment IDs, then use
+`open <reference-uuid> --attachment <attachment-uuid>` to open one in its default
+macOS app. Use `reassign <attachment-uuid> <reference-uuid>` to change its owner
+or `detach <attachment-uuid>` to remove its managed copy.
+
+After `trash <reference-uuid>`, `purge <reference-uuid>` sends a recovery folder
+containing `reference.bib` and the available attachments to macOS Trash.

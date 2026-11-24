@@ -1,13 +1,14 @@
 import Foundation
 import GRDB
 
-public struct SQLiteLibrary: ReferenceStore, CollectionStore {
+public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
     public static var defaultDirectoryURL: URL {
         URL.applicationSupportDirectory.appendingPathComponent("TinyRefs", isDirectory: true)
     }
 
     public let databaseURL: URL
     let database: DatabaseQueue
+    let files: LibraryFiles
     static let containsText = DatabaseFunction("tinyrefs_contains_text", argumentCount: 2, pure: true) { values in
         guard let text = String.fromDatabaseValue(values[0]),
               let term = String.fromDatabaseValue(values[1]) else { return false }
@@ -16,11 +17,9 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore {
 
     /// Opens or creates the database and attachment directory for a library.
     public init(directory: URL) throws {
-        try FileManager.default.createDirectory(
-            at: directory.appendingPathComponent("attachments", isDirectory: true),
-            withIntermediateDirectories: true
-        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let databaseURL = directory.appendingPathComponent("library.sqlite")
+        let files = LibraryFiles(directory: directory)
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
         configuration.busyMode = .timeout(5)
@@ -30,8 +29,23 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore {
 
         let database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         try Self.migrate(database)
+        try database.writeWithoutTransaction { db in
+            try files.withLock {
+                try files.prepare()
+                let ids = try AttachmentRow.select(AttachmentRow.CodingKeys.id, as: UUID.self).fetchSet(db)
+                try files.recover(retaining: ids)
+            }
+        }
         self.databaseURL = databaseURL
         self.database = database
+        self.files = files
+    }
+
+    // Acquire the file lock before starting a SQLite transaction so all writers use the same order.
+    func withFileLock<T: Sendable>(_ operation: @Sendable (Database) throws -> T) async throws -> T {
+        try await database.writeWithoutTransaction { db in
+            try files.withLock { try operation(db) }
+        }
     }
 
     private static func migrate(_ database: DatabaseQueue) throws {

@@ -23,6 +23,20 @@ public protocol ReferenceStore: ReferenceReader {
     func updateReference(id: UUID, changes: ReferenceChanges) async throws -> BibliographicReference
     func moveReferenceToTrash(id: UUID) async throws
     func restoreReference(id: UUID) async throws
+    func purgeReference(id: UUID) async throws -> PurgedReference
+}
+
+public protocol AttachmentStore: Sendable {
+    /// Copies a regular file into the library for an active reference.
+    @discardableResult
+    func attachFile(at source: URL, to referenceID: UUID) async throws -> AttachmentRecord
+    /// Removes the record and managed copy from an active reference.
+    func detachAttachment(id: UUID) async throws
+    /// Transfers ownership between active references while preserving the attachment ID and path.
+    @discardableResult
+    func reassignAttachment(id: UUID, to referenceID: UUID) async throws -> AttachmentRecord
+    /// Resolves a specific attachment or the first available file for a reference.
+    func attachmentFile(for referenceID: UUID, attachmentID: UUID?) async throws -> URL
 }
 
 extension ReferenceReader {

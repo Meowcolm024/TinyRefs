@@ -4,12 +4,16 @@ import GRDB
 extension SQLiteLibrary {
     public func reference(id: UUID) async throws -> BibliographicReference? {
         try await database.read { db in
-            try ReferenceRow.filter(key: id.databaseKey)
-                .including(all: ReferenceRow.fields)
-                .asRequest(of: ReferenceWithFields.self)
-                .fetchOne(db)?
-                .bibliographicReference
+            try Self.fetchReference(id, in: db)
         }
+    }
+
+    static func fetchReference(_ id: UUID, in db: Database) throws -> BibliographicReference? {
+        try ReferenceRow.filter(key: id.databaseKey)
+            .including(all: ReferenceRow.fields)
+            .asRequest(of: ReferenceWithFields.self)
+            .fetchOne(db)?
+            .bibliographicReference
     }
 
     public func references(
@@ -144,19 +148,19 @@ extension SQLiteLibrary {
 
     public func attachments(for referenceID: UUID) async throws -> [AttachmentRecord] {
         try await database.read { db in
-            try AttachmentRow.filter(AttachmentRow.CodingKeys.referenceID == referenceID.databaseKey)
-                .order(AttachmentRow.CodingKeys.originalFilename, AttachmentRow.CodingKeys.id)
-                .fetchAll(db)
-                .map(\.attachment)
+            try Self.attachmentRecords(for: referenceID, in: db)
         }
     }
 
     private func setTrashState(id: UUID, trashed: Bool) async throws {
-        try await database.write { db in
+        try await withFileLock { db in
             var record = try Self.requireReference(id, in: db)
             guard (record.trashedAt != nil) != trashed else { return }
             record.trashedAt = trashed ? Int64(Date().timeIntervalSince1970) : nil
-            try record.update(db, columns: [ReferenceRow.CodingKeys.trashedAt])
+            try db.inTransaction {
+                try record.update(db, columns: [ReferenceRow.CodingKeys.trashedAt])
+                return .commit
+            }
         }
     }
 

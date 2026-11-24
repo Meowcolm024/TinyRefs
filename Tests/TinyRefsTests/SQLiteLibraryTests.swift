@@ -372,7 +372,7 @@ import Testing
     }
 }
 
-private func withTemporaryLibrary(
+func withTemporaryLibrary(
     _ body: (SQLiteLibrary, URL) async throws -> Void
 ) async throws {
     let directory = FileManager.default.temporaryDirectory

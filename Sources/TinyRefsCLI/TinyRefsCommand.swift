@@ -9,7 +9,8 @@ struct TinyRefsCommand: AsyncParsableCommand {
         abstract: "Manage a TinyRefs reference library.",
         subcommands: [
             ImportCommand.self, ExportCommand.self, Query.self, Show.self, Key.self, Create.self, Edit.self,
-            CollectionCommand.self, Trash.self, Restore.self,
+            CollectionCommand.self, Attach.self, Detach.self, Reassign.self, Open.self,
+            Trash.self, Restore.self, Purge.self,
         ]
     )
 

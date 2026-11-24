@@ -76,7 +76,7 @@ struct AttachmentRow: LibraryRecord {
     static let databaseTableName = "attachments"
 
     let id: UUID
-    let referenceID: UUID
+    var referenceID: UUID
     let relativePath: String
     let originalFilename: String
 
