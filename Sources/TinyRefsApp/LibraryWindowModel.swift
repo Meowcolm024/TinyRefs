@@ -18,9 +18,10 @@ final class LibraryWindowModel {
     }
 
     struct Details {
-        let reference: BibliographicReference
+        let row: ReferenceRow
         let collectionIDs: Set<UUID>
         let attachments: [AttachmentRecord]
+        var reference: BibliographicReference { row.reference }
     }
 
     struct CollectionNode: Identifiable {
@@ -56,10 +57,11 @@ final class LibraryWindowModel {
 
     var tableQuery: Query { Query(scope: tableScope, search: tableSearch, revision: revision) }
     var detailsRequest: DetailsRequest { DetailsRequest(id: tableSelection, revision: revision) }
-    var selectedReference: BibliographicReference? {
+    var selectedReference: BibliographicReference? { selectedRow?.reference }
+    var selectedRow: ReferenceRow? {
         guard let id = tableSelection else { return nil }
-        if details?.reference.id == id { return details?.reference }
-        return tableRows.first(where: { $0.id == id })?.reference
+        if let details, details.row.id == id { return details.row }
+        return tableRows.first(where: { $0.id == id })
     }
     var collectionTree: [CollectionNode] {
         let groups = Dictionary(grouping: collections, by: \.parentID)
@@ -100,8 +102,10 @@ final class LibraryWindowModel {
             if !query.search.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
             let references = try await store.references(in: query.scope, matching: query.search)
             try Task.checkCancellation()
+            let rows = try await ReferenceRow.prepare(references)
+            try Task.checkCancellation()
             guard query == tableQuery else { return }
-            tableRows = references.map(ReferenceRow.init)
+            tableRows = rows
             if let tableSelection, !tableRows.contains(where: { $0.id == tableSelection }) {
                 self.tableSelection = nil
             }
@@ -121,8 +125,9 @@ final class LibraryWindowModel {
             }
             async let memberships = store.memberships(for: id)
             async let attachments = store.attachments(for: id)
+            let row = try ReferenceRow(reference, BibLaTeX.structuredFields(for: reference.metadata))
             let result = try await Details(
-                reference: reference,
+                row: row,
                 collectionIDs: Set(memberships.map(\.collectionID)),
                 attachments: attachments
             )

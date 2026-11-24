@@ -6,31 +6,29 @@ import UniformTypeIdentifiers
 
 struct ReferenceRow: Identifiable {
     let reference: BibliographicReference
+    let structured: StructuredBibliographyFields
     let title: String
     let author: String
     let year: String
     let key: String
     var id: UUID { reference.id }
 
-    init(_ reference: BibliographicReference) {
+    init(_ reference: BibliographicReference, _ structured: StructuredBibliographyFields) {
         self.reference = reference
-        let metadata = reference.metadata
-        key = metadata.citationKey
-        let title = displayValue(metadata.fields["title"])
-        self.title = title.isEmpty ? key : title
-        author = displayValue(metadata.fields["author"])
-        year = displayValue(metadata.fields["year"] ?? metadata.fields["date"])
+        self.structured = structured
+        key = reference.metadata.citationKey
+        title = structured.title ?? key
+        author = structured.authors.map(\.displayName).joined(separator: "; ")
+        let date = structured.date
+        year = (date?.start ?? date?.end).map { String($0.year) } ?? date?.text ?? ""
     }
-}
 
-private func displayValue(_ expression: String?) -> String {
-    guard var value = expression?.trimmingCharacters(in: .whitespacesAndNewlines) else { return "" }
-    if value.first == "\"", value.last == "\"", value.count >= 2 {
-        value = String(value.dropFirst().dropLast())
+    static func prepare(_ references: [BibliographicReference]) async throws -> [Self] {
+        try await Task.detached(priority: .userInitiated) {
+            let fields = try BibLaTeX.structuredFields(for: references.map(\.metadata))
+            return zip(references, fields).map(Self.init)
+        }.value
     }
-    return value.replacingOccurrences(of: #"(?<!\\)[{}]"#, with: "", options: .regularExpression)
-        .split(whereSeparator: \.isWhitespace)
-        .joined(separator: " ")
 }
 
 struct ReferenceDrag: Codable, Sendable, Transferable {

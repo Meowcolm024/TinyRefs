@@ -62,6 +62,7 @@ extension TinyRefsCommand {
                 citationKey: selected.metadata.citationKey,
                 entryType: selected.metadata.entryType,
                 fields: selected.metadata.fields,
+                structured: BibLaTeX.structuredFields(for: selected.metadata),
                 trashedAt: selected.trashedAt,
                 collections: collections.map(\.name),
                 attachments: attachments.map(ReferenceDetails.Attachment.init)
@@ -191,6 +192,7 @@ private struct ReferenceDetails: Encodable {
     let citationKey: String
     let entryType: String
     let fields: [String: String]
+    let structured: StructuredBibliographyFields
     let trashedAt: Date?
     let collections: [String]
     let attachments: [Attachment]

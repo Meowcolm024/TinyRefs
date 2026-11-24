@@ -250,8 +250,9 @@ private struct ReassignEditorSheet: View {
         .task {
             do {
                 guard let store = model.store else { return }
-                references = try await store.references(in: .library, matching: nil)
-                    .filter { $0.id != attachment.referenceID }.map(ReferenceRow.init)
+                let candidates = try await store.references(in: .library, matching: nil)
+                    .filter { $0.id != attachment.referenceID }
+                references = try await ReferenceRow.prepare(candidates)
             } catch { self.error = error.localizedDescription }
         }
     }

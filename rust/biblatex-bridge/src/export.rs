@@ -28,7 +28,7 @@ pub(crate) fn serialize(references: &[Reference]) -> Result<String, String> {
     Ok(output)
 }
 
-fn validated_fields(reference: &Reference) -> Result<BTreeMap<String, String>, String> {
+pub(crate) fn validated_fields(reference: &Reference) -> Result<BTreeMap<String, String>, String> {
     if reference.citation_key.is_empty() {
         return Err("Missing citation key.".into());
     }

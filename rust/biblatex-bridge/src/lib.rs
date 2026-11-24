@@ -1,10 +1,12 @@
 mod export;
 mod import;
 mod reference;
+mod structured;
 
 use std::{mem, panic, ptr, slice, str};
 
 use reference::Reference;
+use structured::StructuredReference;
 
 #[repr(i32)]
 enum Status {
@@ -45,10 +47,46 @@ pub unsafe extern "C" fn tinyrefs_biblatex_parse(input: *const u8, len: usize) -
     unsafe {
         invoke(input, len, |source| {
             let entries = import::parse(source).map_err(|message| (Status::ParseError, message))?;
-            serde_json::to_vec_pretty(&entries)
-                .map_err(|error| (Status::InternalError, error.to_string()))
+            let structured: Vec<_> = entries
+                .iter()
+                .map(|entry| StructuredReference::new(entry, &entry.fields))
+                .collect();
+            encode_json(&structured)
         })
     }
+}
+
+/// Returns enriched UTF-8 reference JSON or a diagnostic. Free it with tinyrefs_biblatex_free.
+///
+/// # Safety
+/// For nonzero len, input must point to len initialized bytes in a single
+/// allocation, readable and unchanged for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tinyrefs_biblatex_describe(input: *const u8, len: usize) -> BridgeResult {
+    // SAFETY: The caller guarantees the buffer is readable for the call.
+    unsafe {
+        invoke(input, len, |source| {
+            let entries: Vec<Reference> = serde_json::from_str(source)
+                .map_err(|error| (Status::InvalidInput, error.to_string()))?;
+            let structured = entries
+                .iter()
+                .map(|entry| {
+                    let fields = export::validated_fields(entry).map_err(|message| {
+                        (
+                            Status::InvalidMetadata,
+                            format!("Entry {:?}: {message}", entry.citation_key),
+                        )
+                    })?;
+                    Ok(StructuredReference::new(entry, &fields))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            encode_json(&structured)
+        })
+    }
+}
+
+fn encode_json(value: &impl serde::Serialize) -> Result<Vec<u8>, (Status, String)> {
+    serde_json::to_vec_pretty(value).map_err(|error| (Status::InternalError, error.to_string()))
 }
 
 /// Returns owned UTF-8 BibLaTeX or a diagnostic. Free it with tinyrefs_biblatex_free.

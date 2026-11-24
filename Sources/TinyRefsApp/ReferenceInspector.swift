@@ -5,16 +5,17 @@ struct ReferenceInspector: View {
     let model: LibraryWindowModel
 
     var body: some View {
-        let reference = model.selectedReference
+        let row = model.selectedRow
+        let reference = row?.reference
         VStack(spacing: 0) {
-            if let reference {
-                header(for: reference)
+            if let row {
+                header(row.title)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 19) {
-                        actions(for: reference)
+                        actions(for: row.reference)
                         Divider()
-                        metadata(for: reference)
-                        if let details = model.details, details.reference.id == reference.id {
+                        metadata(for: row)
+                        if let details = model.details, details.reference.id == row.id {
                             Divider()
                             collections(for: details)
                             Divider()
@@ -36,9 +37,8 @@ struct ReferenceInspector: View {
         })
     }
 
-    private func header(for reference: BibliographicReference) -> some View {
-        let title = ReferenceRow(reference).title
-        return Text(title)
+    private func header(_ title: String) -> some View {
+        Text(title)
             .font(.title3.weight(.semibold))
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -74,11 +74,33 @@ struct ReferenceInspector: View {
         }
     }
 
-    private func metadata(for reference: BibliographicReference) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            information("Citation Key", reference.metadata.citationKey, monospaced: true)
-            ForEach(reference.metadata.fields.keys.sorted(), id: \.self) { name in
-                information(name, reference.metadata.fields[name] ?? "")
+    private func metadata(for row: ReferenceRow) -> some View {
+        let parsed = row.structured
+        let fields = row.reference.metadata.fields
+        let readable = [
+            ("Authors", row.author, ["author"]),
+            ("Editors", parsed.editors.map(\.displayName).joined(separator: "; "), ["editor"]),
+            ("Publication Date", parsed.date?.text ?? "", ["date", "year", "month", "day"]),
+            ("Event Date", parsed.eventDate?.text ?? "", ["eventdate"]),
+            ("Original Date", parsed.originalDate?.text ?? "", ["origdate"]),
+            ("Access Date", parsed.accessDate?.text ?? "", ["urldate"]),
+            ("Published In", parsed.containerTitle ?? "", ["journaltitle", "journal", "booktitle"]),
+            ("Publisher", parsed.publisher ?? "", ["publisher"]),
+            ("DOI", parsed.doi ?? "", ["doi"]),
+            ("URL", parsed.url ?? "", ["url"]),
+            ("Keywords", parsed.keywords.joined(separator: ", "), ["keywords"]),
+            ("Abstract", parsed.abstract ?? "", ["abstract"]),
+        ].filter { !$0.1.isEmpty }
+        var represented = Set(readable.flatMap(\.2))
+        if parsed.title != nil { represented.insert("title") }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            information("Citation Key", row.key, monospaced: true)
+            ForEach(readable, id: \.0) { label, value, _ in
+                information(label, value)
+            }
+            ForEach(fields.keys.filter { !represented.contains($0) }.sorted(), id: \.self) { name in
+                information(name, fields[name] ?? "")
             }
         }
     }

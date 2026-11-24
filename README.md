@@ -64,8 +64,13 @@ citation key rolls back the whole import.
 to write the output to a file. Use `--collection` to select a collection on
 import or export. `import --json` previews a bibliography without writing to
 the library. `export --json` switches the output format to a JSON array.
-Each JSON entry contains
-`citation_key`, `entry_type`, and `fields`.
+Each JSON entry contains `citation_key`, `entry_type`, `fields`, and a
+`structured` object. Its `authors` and `editors` arrays contain names with
+`given_name`, `family_name`, `prefix`, and `suffix`. `keywords` is an array of
+strings. The object also includes display text for the title and abstract,
+publication information, and structured dates when present. `fields` contains
+BibLaTeX expressions, including custom fields. `show` includes the same
+`structured` object for an individual reference.
 
 ## Manage attachments
 

@@ -58,7 +58,7 @@ Moving a reference to Trash sets `trashed_at` and keeps its metadata, membership
 
 ### Bibliographic fields
 
-Store BibLaTeX entry types and field names as open-ended text with ASCII lowercase names. A reference can have zero or more fields. A missing field has no row, and an explicit empty value has a row with the BibLaTeX expression `{}`. Each `value` stores a self-contained BibLaTeX expression, such as `{{NASA} mission}`, so that protected groups and TeX markup survive export. The reference list derives titles, authors, and dates from these fields for display, search, and sorting.
+Store BibLaTeX entry types and field names as open-ended text with ASCII lowercase names. A reference can have zero or more fields. A missing field has no row, and an explicit empty value has a row with the BibLaTeX expression `{}`. Each `value` stores a self-contained BibLaTeX expression, such as `{{NASA} mission}`, so that protected groups and TeX markup survive export. The reference list and inspector display metadata extracted by the Rust bridge. SQLite search continues to match stored field values and citation keys.
 
 Validate citation keys, entry types, field names, and expressions for BibLaTeX syntax before saving. Save changes to a reference and its fields in one database transaction.
 
@@ -126,12 +126,15 @@ Opening an attachment from the inspector sends PDFs to Preview and other files t
 
 ## Import and Export
 
-The Rust bridge exposes two operations:
+The Rust bridge exposes three operations:
 
 - **Import:** Parse BibLaTeX text into reference data.
 - **Export:** Serialize reference data into BibLaTeX text.
+- **Describe:** Extract structured metadata from stored field expressions for display and JSON export.
 
 The bridge exchanges entry types, citation keys, and field expressions as UTF-8 JSON. Swift owns library IDs, collections, and managed attachments. The Rust bridge provides explicit memory ownership and structured error reporting.
+
+Import and describe add a `structured` object containing author and editor name parts, keyword strings, readable title and abstract text, publication information, and available dates. An individual date has a display string and parsed year, month, and day components where available. Ranges can have two endpoints or an open end. Unrecognized dates remain available as display text. Structured values are derived on demand from fields in SQLite, so edits and existing libraries use the same extraction path.
 
 Import uses the crate's raw entry representation to preserve explicitly supplied fields. Expand file-local string macros into self-contained expressions, and report unresolved macros as import errors. Preserve link fields such as `crossref` and `xdata` because the crate's high-level parser resolves inheritance and drops `xdata`. [Rust `biblatex` parser source](https://github.com/typst/biblatex/blob/main/src/lib.rs)
 

@@ -29,11 +29,10 @@ struct ExportCommand: AsyncParsableCommand {
             scope = .library
         }
         let metadata = try await library.references(in: scope).map(\.metadata)
-        let data = try json ? encodeJSON(metadata) : Data(BibLaTeX.serialize(metadata).utf8)
+        let text = try json ? BibLaTeX.structuredJSON(for: metadata) : BibLaTeX.serialize(metadata)
         if let destination {
-            try data.write(to: destination, options: .atomic)
+            try Data(text.utf8).write(to: destination, options: .atomic)
         } else {
-            let text = String(decoding: data, as: UTF8.self)
             print(text, terminator: json ? "\n" : "")
         }
     }

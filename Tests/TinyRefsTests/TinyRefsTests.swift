@@ -6,6 +6,7 @@ private struct ImportedReference: Decodable {
     let citationKey: String
     let entryType: String
     let fields: [String: String]
+    let structured: StructuredBibliographyFields
 }
 
 private func importFixture(_ filename: String) throws -> [ImportedReference] {
@@ -28,6 +29,9 @@ private func importFixture(_ filename: String) throws -> [ImportedReference] {
     #expect(article.fields["year"] == "{1983}")
     #expect(article.fields["doi"] == "{10.2307/2273659}")
     #expect(article.fields["pages"] == "{931–940}")
+    #expect(article.structured.authors.map(\.displayName) == ["Henk Barendregt", "Mario Coppo", "Mariangiola Dezani-Ciancaglini"])
+    #expect(article.structured.keywords.isEmpty)
+    #expect(article.structured.date?.start?.year == 1983)
 }
 
 @Test func importHaskellBibliography() throws {
@@ -42,6 +46,58 @@ private func importFixture(_ filename: String) throws -> [ImportedReference] {
     let abstract = try #require(linearHaskell.fields["abstract"])
     #expect(abstract.contains("\n"))
     #expect(abstract.contains("&nbsp;—&nbsp;"))
+    #expect(linearHaskell.structured.authors.map(\.familyName) == ["Bernardy", "Boespflug", "Newton", "Peyton Jones", "Spiwack"])
+    #expect(linearHaskell.structured.keywords == ["typestate", "polymorphism", "linear types", "linear logic", "laziness", "Haskell", "GHC"])
+    #expect(linearHaskell.structured.date?.text == "2017-12")
+    #expect(linearHaskell.structured.date?.start?.month == 12)
+    #expect(linearHaskell.structured.abstract?.contains("system — both") == true)
+    #expect(linearHaskell.structured.containerTitle == "Proc. ACM Program. Lang.")
+}
+
+@Test func structuresNamesAndProtectedKeywordsWithDateRanges() throws {
+    let source = #"""
+        @string{topic = "primitive recursion"}
+        @book{SystemT,
+          title = {G{\"o}del's {System T}},
+          author = {G{\"o}del, Kurt and {Logic and Computation Group}},
+          editor = {de Bruijn, Nicolaas},
+          date = {1958-01/1959?},
+          keywords = topic # {, {types, terms}, computability},
+          abstract = {Recursion&nbsp;in G{\"o}del's system.},
+          localfield = {Keep this value}
+        }
+        @misc{UntypedDate, date = {20266-00-XX}, abstract = {Price is $5}, keywords = {logic}}
+        @misc{Untitled,}
+        """#
+    let input = Data(source.utf8)
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let entries = try decoder.decode([ImportedReference].self, from: Data(BibLaTeX.importJSON(from: input).utf8))
+    #expect(entries.count == 3)
+    let systemT = try #require(entries.first)
+    #expect(systemT.structured.title == "Gödel's System T")
+    #expect(systemT.structured.authors.map(\.displayName) == ["Kurt Gödel", "Logic and Computation Group"])
+    #expect(systemT.structured.editors.first?.prefix == "de")
+    #expect(systemT.structured.editors.first?.familyName == "Bruijn")
+    #expect(systemT.structured.keywords == ["primitive recursion", "types, terms", "computability"])
+    #expect(systemT.structured.date?.kind == .range)
+    #expect(systemT.structured.date?.start?.month == 1)
+    #expect(systemT.structured.date?.end?.year == 1959)
+    #expect(systemT.structured.date?.uncertain == true)
+    #expect(systemT.structured.abstract == "Recursion in Gödel's system.")
+    #expect(systemT.fields["localfield"] == "{Keep this value}")
+
+    let unusual = try #require(entries.first { $0.citationKey == "UntypedDate" })
+    #expect(unusual.structured.date?.kind == .unparsed)
+    #expect(unusual.structured.date?.text == "20266-00-XX")
+    #expect(unusual.structured.keywords == ["logic"])
+    #expect(unusual.fields["abstract"] == "{Price is $5}")
+    let empty = try #require(entries.last)
+    #expect(empty.structured.authors.isEmpty)
+    #expect(empty.structured.keywords.isEmpty)
+
+    let metadata = try BibLaTeX.references(from: input)
+    #expect(try BibLaTeX.structuredFields(for: metadata) == entries.map(\.structured))
 }
 
 @Test func importAcceptsEmptyInput() throws {

@@ -35,11 +35,23 @@ import Testing
         try await source.restoreReference(id: linearHaskell.id)
 
         let exported = try await source.exportBibLaTeX(fromCollection: collection.id)
-        let destination = try SQLiteLibrary(directory: directory.appendingPathComponent("Round trip", isDirectory: true))
+        let roundTripDirectory = directory.appendingPathComponent("Round trip", isDirectory: true)
+        let destination = try SQLiteLibrary(directory: roundTripDirectory)
         let reimported = try await destination.importBibLaTeX(Data(exported.utf8))
         #expect(reimported.map(\.metadata) == imported.map(\.metadata).sorted { $0.citationKey < $1.citationKey })
         #expect(Set(reimported.map(\.id)).isDisjoint(with: imported.map(\.id)))
         #expect(try await destination.references(in: .unfiled) == reimported)
+
+        let copied = try #require(reimported.first { $0.metadata.citationKey == "Bernardy2017" })
+        try await destination.updateReference(id: copied.id, changes: ReferenceChanges(fields: [
+            "author": #"{G{\"o}del, Kurt}"#,
+            "keywords": #""type theory" # ", System T""#,
+        ]))
+        let reopened = try SQLiteLibrary(directory: roundTripDirectory)
+        let edited = try #require(try await reopened.reference(id: copied.id))
+        let structured = try BibLaTeX.structuredFields(for: edited.metadata)
+        #expect(structured.authors.map(\.displayName) == ["Kurt Gödel"])
+        #expect(structured.keywords == ["type theory", "System T"])
     }
 }
 

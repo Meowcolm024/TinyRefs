@@ -30,6 +30,28 @@ public enum BibLaTeX {
         return try JSONDecoder().decode([ReferenceMetadata].self, from: Data(json.utf8))
     }
 
+    /// Adds Rust-decoded fields to reference JSON without changing the stored expressions.
+    public static func structuredJSON(for references: [ReferenceMetadata]) throws -> String {
+        try call(tinyrefs_biblatex_describe, with: JSONEncoder().encode(references))
+    }
+
+    /// Interprets stored expressions in the same order as the supplied references.
+    public static func structuredFields(for references: [ReferenceMetadata]) throws -> [StructuredBibliographyFields] {
+        struct Entry: Decodable { let structured: StructuredBibliographyFields }
+        let json = try structuredJSON(for: references)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let entries = try decoder.decode([Entry].self, from: Data(json.utf8))
+        guard entries.count == references.count else {
+            throw BridgeError.bridge("The BibLaTeX bridge returned the wrong number of references.")
+        }
+        return entries.map(\.structured)
+    }
+
+    public static func structuredFields(for reference: ReferenceMetadata) throws -> StructuredBibliographyFields {
+        try structuredFields(for: [reference])[0]
+    }
+
     /// Serializes metadata as canonical UTF-8 BibLaTeX.
     public static func serialize(_ references: [ReferenceMetadata]) throws -> String {
         try call(tinyrefs_biblatex_serialize, with: JSONEncoder().encode(references))

@@ -117,22 +117,25 @@ fn has_balanced_groups(value: &str) -> bool {
     depth == 0
 }
 
+pub(crate) const MONTH_NAMES: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
 fn month_macro(name: &str) -> Option<&'static str> {
-    match name {
-        "jan" => Some("January"),
-        "feb" => Some("February"),
-        "mar" => Some("March"),
-        "apr" => Some("April"),
-        "may" => Some("May"),
-        "jun" => Some("June"),
-        "jul" => Some("July"),
-        "aug" => Some("August"),
-        "sep" => Some("September"),
-        "oct" => Some("October"),
-        "nov" => Some("November"),
-        "dec" => Some("December"),
-        _ => None,
-    }
+    MONTH_NAMES
+        .into_iter()
+        .find(|month| month[..3].eq_ignore_ascii_case(name))
 }
 
 #[cfg(test)]
