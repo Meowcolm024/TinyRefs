@@ -31,6 +31,8 @@ SQLite is the source of truth. BibLaTeX files are imported and exported rather t
 
 Rust handles only bibliography parsing and serialization. Swift handles all application state, persistence, and filesystem operations.
 
+The shared library exposes asynchronous reference and collection protocols for use by the app, the CLI, and test doubles. The SQLite implementation uses GRDB migrations, records, and its query interface.
+
 ## Data Model
 
 ### SQLite records
@@ -40,16 +42,18 @@ Rust handles only bibliography parsing and serialization. Swift handles all appl
 | `bibliographic_references` | `id`, `citation_key`, `entry_type`, `trashed_at` | `id` is the primary key. `citation_key` is unique across the library with `BINARY` collation. `trashed_at` is a nullable integer containing Unix seconds. |
 | `reference_fields` | `reference_id`, `name`, `value` | Primary key `(reference_id, name)`. `reference_id` points to `bibliographic_references`. |
 | `attachments` | `id`, `reference_id`, `relative_path`, `original_filename` | `id` is the primary key. `reference_id` points to `bibliographic_references`. `relative_path` is unique. |
-| `collections` | `id`, `name` | `id` is the primary key. Collections are flat with nonblank names that are unique with `BINARY` collation. |
+| `collections` | `id`, `name`, `parent_id` | `id` is the primary key. Nonblank names are globally unique with `BINARY` collation. `parent_id` is a nullable reference to another collection. |
 | `collection_memberships` | `collection_id`, `reference_id` | Primary key `(collection_id, reference_id)`. Both columns are foreign keys. |
 
 Columns are `TEXT NOT NULL` unless specified otherwise. Swift generates stable UUIDs for references, attachments, and collections and stores them as lowercase UUID strings. Citation keys retain their spelling and case. Imports and edits use the database's exact key comparison when checking for conflicts. References in Trash continue to reserve their citation keys until removed from the library.
 
-Enable foreign-key enforcement on every connection. All foreign keys use `ON DELETE CASCADE`. Removing a reference from the database removes its field, attachment, and membership rows. Deleting a collection removes its membership rows. Index `attachments(reference_id)` and `collection_memberships(reference_id)` for reference lookups and cascading deletes. [SQLite foreign key support](https://www.sqlite.org/foreignkeys.html)
+Enable foreign-key enforcement on every connection. Removing a reference or collection cascades to its dependent field, attachment, or membership rows. The collection parent relationship uses `ON DELETE SET NULL`. Index `attachments(reference_id)`, `collection_memberships(reference_id)`, and `collections(parent_id)` for lookups and deletes. [SQLite foreign key support](https://www.sqlite.org/foreignkeys.html)
+
+A collection can have one parent. Moving a collection keeps its descendants and memberships, and the library checks the proposed ancestry in the same transaction as the move. Deleting a collection moves its immediate children to the top level and keeps their descendants and memberships.
 
 ### Built-in library views
 
-**Library** shows active references, whose `trashed_at` is `NULL`. Collection views show their active members. **Unfiled Items** shows active references with zero collection memberships. New references and imports without a collection appear there automatically, as do active references whose last membership is removed. **Trash** shows references with a `trashed_at` value. These views are derived from the database.
+**Library** shows active references, whose `trashed_at` is `NULL`. A collection view shows its active direct members. **Unfiled Items** shows active references with zero collection memberships. New references and imports without a collection appear there automatically, as do active references whose last membership is removed. **Trash** shows references with a `trashed_at` value. These views are derived from the database.
 
 Moving a reference to Trash sets `trashed_at` and keeps its metadata, memberships, and attachments. Restoring it clears `trashed_at`, returning it to all surviving collections or to Unfiled Items if it has no memberships.
 
@@ -73,6 +77,8 @@ Library/
         └── document.pdf
 ```
 
+The default library directory is `~/Library/Application Support/TinyRefs`. The app and CLI share that default. Each library directory holds its own database and attachment files.
+
 Each attachment belongs to one reference, and a reference can have any number of PDFs. The database stores `attachments/<attachment-uuid>/document.pdf` relative to the library root. The app uses `original_filename` as the display label and generates the storage path from the attachment UUID.
 
 When adding a PDF, stage the copy inside the library, move it to its final path, and then commit the attachment row. When removing an individual attachment, commit the database deletion before removing its file. Serialize attachment writes, trash actions, and recovery across processes with a library lock. On reopening an existing library, remove abandoned staging files and unreferenced attachment directories in the managed layout. Keep records for missing PDFs so the app can report which files are unavailable.
@@ -91,7 +97,7 @@ Use a native macOS window with a unified toolbar, resizable split panes, and SF 
 
 | Pane | Browsing references | Reading a PDF |
 | --- | --- | --- |
-| Left navigator | Select **Library**, **Unfiled Items**, a folder-style collection, or **Trash**. Create, rename, and delete collections here. | Expand a navigator item with a disclosure triangle to browse its references as indented rows. Expand the current branch when the reader opens. |
+| Left navigator | Select **Library**, **Unfiled Items**, a collection in the hierarchy, or **Trash**. Create, rename, move, and delete collections here. | Expand a navigator item with a disclosure triangle to browse its references as indented rows. Expand the current branch when the reader opens. |
 | Center workspace | Sort references in the current navigator selection. Select a row to show its details in the inspector. | Show the PDF in the same window. Double-click another reference in the navigator to open its PDF in the center. |
 | Right inspector | View metadata, collection memberships, and PDFs. Edit metadata and manage attachments for active references. | Show the inspector for the selected navigator row. |
 
@@ -138,7 +144,7 @@ Automatic export to a configured `.bib` file may be added later.
 
 ## Command-line Interface
 
-`tinyrefs` uses the same library operations, validation, and transactions as the app. Use `--library <directory>` to select another library. The CLI defaults to the app's library location, writes results to stdout, and reports errors on stderr with a nonzero exit status.
+`tinyrefs` uses Swift Argument Parser and calls the shared library operations. Use `--database <directory>` before a storage command or with its options to select the library directory. The path may be absolute or relative to the current working directory. TinyRefs creates `library.sqlite` and `attachments/` in that directory if needed. Omit the option to use `~/Library/Application Support/TinyRefs`. Commands write results to stdout and report errors on stderr with a nonzero exit status.
 
 Commands identify references and attachments by UUID. Collection commands use exact, case-sensitive names. Quote names and paths that contain spaces.
 
@@ -146,15 +152,15 @@ Commands identify references and attachments by UUID. Collection commands use ex
 
 | Command | Behavior |
 | --- | --- |
-| `import <file> [--collection <name>]` | Import a `.bib` file. With `--collection`, add the new references to the named collection. |
-| `export <file> [--collection <name>]` | Export active references from the library or from the named collection. |
-| `query [<text>]` | List references or search by citation key and bibliographic fields. Print UUID, citation key, entry type, and title when available. |
-| `show <uuid>` | Print the reference's metadata, collections, and attachments, including attachment UUIDs. |
+| `import <file>` | Parse a `.bib` file and print the JSON preview. Transactional import will support `--collection <name>`. |
+| `export <file> [--collection <name>]` | Planned. Export active references from the library or from the named collection. |
+| `query [<text>]` | List references or search by citation key and bibliographic fields. Print tab-separated UUID, citation key, entry type, and title when available. |
+| `show <uuid>` | Print the reference's metadata, collections, and attachments as JSON, including attachment UUIDs. |
 | `key <uuid>` | Print the citation key on its own for scripting or copying. |
 | `create <key> <type> [--field <name=value>]` | Create a reference and print its UUID. |
 | `edit <uuid> [--key <key>] [--type <type>] [--field <name=value>] [--unset-field <name>]` | Update the citation key, entry type, or fields of an active reference. |
 
-`query` defaults to active references across the library. Pass one of `--collection <name>`, `--unfiled`, or `--trash` to choose a scope. `show` accepts active and trashed references. Repeat `--field` or `--unset-field` to edit multiple fields. Field values are BibLaTeX expressions, for example `--field 'title={A paper}'`.
+`query` defaults to active references across the library. Pass one of `--collection <name>`, `--unfiled`, or `--trash` to choose a scope. `show` accepts active and trashed references. Repeat `--field` or `--unset-field` to edit multiple fields. Field values are BibLaTeX expressions such as `--field 'title={Linear Haskell}'`. When an edit names the same field in both options, the assignment takes precedence.
 
 ### Attachments
 
@@ -168,10 +174,11 @@ Commands identify references and attachments by UUID. Collection commands use ex
 
 | Command | Behavior |
 | --- | --- |
-| `collection list` | List collection names. |
-| `collection create <name>` | Create a named collection. |
+| `collection list` | List collections as JSON with names, IDs, and parent IDs for nested collections. |
+| `collection create <name> [--parent <name>]` | Create a named collection, optionally under a parent. |
 | `collection rename <name> <new-name>` | Rename a collection while keeping its memberships. |
-| `collection delete <name>` | Delete the collection and its memberships. References stay in the library. |
+| `collection move <name> [--parent <name>]` | Move a collection under a parent or to the top level when the parent is omitted. |
+| `collection delete <name>` | Delete the collection and its memberships. Its children move to the top level. |
 | `collection add <name> <uuid>` | Ensure an active reference belongs to the collection. |
 | `collection remove <name> <uuid>` | Remove an active reference's membership in the collection. |
 

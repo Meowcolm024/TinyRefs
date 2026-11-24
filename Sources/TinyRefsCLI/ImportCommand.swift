@@ -1,29 +1,18 @@
-import Darwin
+import ArgumentParser
 import Foundation
 import TinyRefs
 
-@main
-enum ImportCommand {
-    static func main() {
-        let arguments = CommandLine.arguments.dropFirst()
-        let usage = "Usage: tinyrefs import <file>"
+struct ImportCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "import",
+        abstract: "Parse a BibLaTeX file and print the resulting JSON."
+    )
 
-        if arguments.isEmpty || Array(arguments) == ["--help"] {
-            print(usage)
-            return
-        }
+    @Argument(help: "The UTF-8 bibliography file.", completion: .file(extensions: ["bib"]))
+    var file: String
 
-        guard arguments.count == 2, arguments.first == "import", let path = arguments.last else {
-            FileHandle.standardError.write(Data("\(usage)\n".utf8))
-            exit(EX_USAGE)
-        }
-
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path))
-            print(try BibLaTeX.importJSON(from: data))
-        } catch {
-            FileHandle.standardError.write(Data("tinyrefs: \(error.localizedDescription)\n".utf8))
-            exit(EXIT_FAILURE)
-        }
+    func run() throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: file))
+        print(try BibLaTeX.importJSON(from: data))
     }
 }

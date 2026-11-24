@@ -137,35 +137,40 @@ mod tests {
     fn preserves_explicit_fields_and_expands_macros() {
         let references = parse(
             r#"
-            @string{prefix = "Étude "}
-            @string{label = PREFIX # "{NASA}"}
-            @NovelKind{Key,
-                Title = label # " mission",
-                Extra = {\LaTeX},
+            @string{prefix = "Gödel’s "}
+            @string{label = PREFIX # "{System T}"}
+            @TypeSystem{GoedelT,
+                Title = label # " and primitive recursion",
+                author = {Gödel, Kurt},
+                Extra = {$\lambda$-calculus},
                 note = "",
                 year = 2026,
                 month = JAN,
-                crossref = {Parent},
-                xdata = {Shared}
+                crossref = {ProofTheory},
+                xdata = {LogicNotes}
             }
-            @xdata{Shared, title = {Shared title}}
-            @book{key,}
+            @xdata{LogicNotes, title = {Notes on logic}}
+            @book{goedelt,}
             "#,
         )
         .unwrap();
         assert_eq!(references.len(), 3);
         let reference = &references[0];
-        assert_eq!(reference.citation_key, "Key");
-        assert_eq!(reference.entry_type, "novelkind");
-        assert_eq!(reference.fields["title"], "{Étude {NASA} mission}");
-        assert_eq!(reference.fields["extra"], r"{\LaTeX}");
+        assert_eq!(reference.citation_key, "GoedelT");
+        assert_eq!(reference.entry_type, "typesystem");
+        assert_eq!(
+            reference.fields["title"],
+            "{Gödel’s {System T} and primitive recursion}"
+        );
+        assert_eq!(reference.fields["author"], "{Gödel, Kurt}");
+        assert_eq!(reference.fields["extra"], r"{$\lambda$-calculus}");
         assert_eq!(reference.fields["note"], "{}");
         assert_eq!(reference.fields["year"], "{2026}");
         assert_eq!(reference.fields["month"], "{January}");
-        assert_eq!(reference.fields["crossref"], "{Parent}");
-        assert_eq!(reference.fields["xdata"], "{Shared}");
+        assert_eq!(reference.fields["crossref"], "{ProofTheory}");
+        assert_eq!(reference.fields["xdata"], "{LogicNotes}");
         assert_eq!(references[1].entry_type, "xdata");
-        assert_eq!(references[2].citation_key, "key");
+        assert_eq!(references[2].citation_key, "goedelt");
     }
 
     #[test]

@@ -14,13 +14,18 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "TinyRefs", targets: ["TinyRefs"]),
+        .executable(name: "TinyRefsApp", targets: ["TinyRefsApp"]),
         .executable(name: "tinyrefs", targets: ["TinyRefsCLI"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.12.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     ],
     targets: [
         .systemLibrary(name: "CBibLaTeX"),
         .target(
             name: "TinyRefs",
-            dependencies: ["CBibLaTeX"],
+            dependencies: ["CBibLaTeX", .product(name: "GRDB", package: "GRDB.swift")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -28,10 +33,14 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", rustArchive]),
             ],
         ),
-        .executableTarget(name: "TinyRefsCLI", dependencies: ["TinyRefs"]),
+        .executableTarget(name: "TinyRefsApp", dependencies: ["TinyRefs"]),
+        .executableTarget(
+            name: "TinyRefsCLI",
+            dependencies: ["TinyRefs", .product(name: "ArgumentParser", package: "swift-argument-parser")],
+        ),
         .testTarget(
             name: "TinyRefsTests",
-            dependencies: ["TinyRefs"],
+            dependencies: ["TinyRefs", .product(name: "GRDB", package: "GRDB.swift")],
             resources: [.copy("Fixtures")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),

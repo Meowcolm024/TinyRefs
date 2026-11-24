@@ -50,7 +50,7 @@ private func importFixture(_ filename: String) throws -> [ImportedReference] {
 
 @Test func importReportsMalformedEntries() {
     do {
-        _ = try BibLaTeX.importJSON(from: Data("@book{broken, title = {unfinished}".utf8))
+        _ = try BibLaTeX.importJSON(from: Data("@article{LinearHaskell, title = {Linear Haskell}".utf8))
         Issue.record("Expected a parse error")
     } catch BibLaTeX.ImportError.parse(let message) {
         #expect(message.contains("at byte"))

@@ -10,9 +10,9 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 
 ## Stage 2 — SQLite library and collections
 
-- Add GRDB migrations and Swift models for references, generic fields, collections, memberships, and attachment records. Use stable UUIDs, parameterized queries, foreign keys, and transactions for related changes.
-- Implement reference creation, editing, search, and collection membership. Derive the Library, Unfiled Items, and Trash views from the stored state. Implement moving an entry to the library Trash and restoring it.
-- Verify that citation key edits preserve identity and that trashed references reserve their keys. Test case-sensitive uniqueness for citation keys and collection names, which references appear in Unfiled Items, restoration after a collection is deleted, and foreign-key cascades.
+- Add GRDB migrations and Swift models for references, generic fields, collections, memberships, and attachment records. Use stable UUIDs, GRDB's query interface, foreign keys, and transactions for related changes. Expose reference and collection protocols so callers can substitute test doubles.
+- Implement reference creation, editing, search, and collection membership. Give each collection an optional parent and support moving collections. Derive the Library, Unfiled Items, and Trash views from the stored state. Implement moving an entry to the library Trash and restoring it.
+- Verify that citation key edits preserve identity and that trashed references reserve their keys. Test case-sensitive uniqueness for citation keys and collection names, which references appear in Unfiled Items, restoration after a collection is deleted, and foreign-key cascades. Verify that moving a collection rejects cycles and deleting a parent preserves its children.
 
 ## Stage 3 — BibLaTeX import and export
 
@@ -22,7 +22,7 @@ Implement the shared library and CLI first so the data model and BibLaTeX workfl
 
 ## Stage 4 — Reference and collection CLI
 
-- Add `import`, `export`, `query`, `show`, `key`, `create`, `edit`, collection management and membership commands, `trash`, and `restore`. Use the shared library and support the app's default library path and `--library <directory>`.
+- Use Swift Argument Parser for `import`, `export`, `query`, `show`, `key`, `create`, `edit`, collection management and membership commands, `trash`, and `restore`. Use the shared library and support the app's default library directory and `--database <directory>`.
 - Verify the CLI against a scratch library. Import into a named collection, find and edit entries by UUID, and export and reimport into a fresh library. Test collection names with spaces, conflicting names and keys, and membership changes. Check that a trashed reference is discoverable via `query --trash` and returns to its collection on restore.
 
 ## Stage 5 — Managed PDFs and deletion to macOS Trash
