@@ -41,7 +41,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TinyRefsTests",
-            dependencies: ["TinyRefs", .product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: ["TinyRefs", "TinyRefsApp", .product(name: "GRDB", package: "GRDB.swift")],
             resources: [.copy("Fixtures")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),

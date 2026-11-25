@@ -80,6 +80,17 @@ private struct LibraryBrowser: View {
                 if let pendingPicker { model.handleFiles(urls, for: pendingPicker) }
             } catch { model.report(error) }
         }
+        .fileExporter(
+            isPresented: $model.showsBibliographyExporter,
+            document: model.bibliographyDocument,
+            contentTypes: [BibliographyDocument.contentType],
+            defaultFilename: model.bibliographyDocument?.filename
+        ) { result in
+            model.bibliographyDocument = nil
+            if case .failure(let error) = result { model.report(error) }
+        } onCancellation: {
+            model.bibliographyDocument = nil
+        }
         .sheet(item: $model.editor) { editor in
             LibraryEditorSheet(model: model, editor: editor)
         }
@@ -119,6 +130,11 @@ private struct LibraryBrowser: View {
             }
             .help("Import Bibliography")
             .disabled(!model.tableScope.allowsImport || model.working)
+            Button("Export Full Library as BibTeX…", systemImage: "square.and.arrow.up") {
+                Task { await model.exportBibliography() }
+            }
+            .help("Export Full Library as BibTeX")
+            .disabled(model.working || model.bibliographyDocument != nil)
         }
 
         ToolbarItem {

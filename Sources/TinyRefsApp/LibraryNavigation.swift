@@ -86,16 +86,24 @@ struct ReferenceTable: View {
             }
         }
         .contextMenu(forSelectionType: UUID.self) { ids in
-            if let row = rows.first(where: { ids.contains($0.id) }) {
-                ReferenceMenu(model: model, reference: row.reference, scope: model.tableScope)
-            } else {
+            let references = rows.filter { ids.contains($0.id) }.map(\.reference)
+            if references.isEmpty {
                 Button("New Reference…") { model.editor = .newReference }
                 Button("Import…") { model.filePicker = .importBibliography(model.tableScope) }
                     .disabled(!model.tableScope.allowsImport)
+            } else {
+                Button(references.count == 1 ? "Export as BibTeX…" : "Export Selected as BibTeX…") {
+                    Task { await model.exportBibliography(references) }
+                }
+                .disabled(model.working || model.bibliographyDocument != nil)
+                if references.count == 1, let reference = references.first {
+                    Divider()
+                    ReferenceMenu(model: model, reference: reference, scope: model.tableScope)
+                }
             }
         } primaryAction: { ids in
-            if let row = rows.first(where: { ids.contains($0.id) }) {
-                model.tableSelection = row.id
+            if ids.count == 1, let row = rows.first(where: { ids.contains($0.id) }) {
+                model.tableSelection = [row.id]
                 model.openPDFInPreview(for: row.reference, showInspectorIfNoPDF: true)
             }
         }

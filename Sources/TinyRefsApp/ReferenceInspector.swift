@@ -26,6 +26,9 @@ struct ReferenceInspector: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .accessibilityLabel("Reference Inspector")
+            } else if model.tableSelection.count > 1 {
+                ContentUnavailableView("\(model.tableSelection.count) References Selected", systemImage: "doc.on.doc")
+                    .accessibilityLabel("Reference Inspector")
             } else {
                 ContentUnavailableView("No Reference Selected", systemImage: "doc.text")
                     .accessibilityLabel("Reference Inspector")

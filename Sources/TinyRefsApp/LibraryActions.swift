@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OSLog
+import SwiftUI
 import TinyRefs
 import UniformTypeIdentifiers
 
@@ -77,7 +78,52 @@ enum LibraryFilePicker: Equatable {
     }
 }
 
+struct BibliographyDocument: FileDocument {
+    static let contentType = UTType(filenameExtension: "bib") ?? .plainText
+    static var readableContentTypes: [UTType] { [contentType] }
+
+    let data: Data
+    let filename: String
+
+    init(_ text: String, filename: String) {
+        data = Data(text.utf8)
+        self.filename = filename
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+        filename = configuration.file.preferredFilename ?? "References.bib"
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
 extension LibraryWindowModel {
+    func exportBibliography(_ selection: [BibliographicReference]? = nil) async {
+        guard let store, !working, bibliographyDocument == nil else { return }
+        working = true
+        defer { working = false }
+
+        do {
+            let document = try await Task.detached {
+                if let selection {
+                    return try BibliographyDocument(
+                        BibLaTeX.serialize(selection.map(\.metadata)), filename: "References.bib"
+                    )
+                }
+                let text = try await store.exportBibLaTeX()
+                return BibliographyDocument(text, filename: "Library.bib")
+            }.value
+            bibliographyDocument = document
+            showsBibliographyExporter = true
+        } catch { report(error) }
+    }
+
     func createReference(fromBibTeX source: String) async throws {
         let reference = try await perform { store in
             let entries = try await Task.detached {
@@ -87,7 +133,7 @@ extension LibraryWindowModel {
             return try await store.createReference(metadata)
         }
         tableScope = .unfiled
-        tableSelection = reference.id
+        tableSelection = [reference.id]
         tableSearch = ""
         showsInspector = true
     }
@@ -254,7 +300,7 @@ extension LibraryWindowModel {
     }
 
     private func clearSelection(for id: UUID) {
-        if tableSelection == id { tableSelection = nil }
+        tableSelection.remove(id)
     }
 }
 

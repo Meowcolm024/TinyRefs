@@ -43,25 +43,30 @@ final class LibraryWindowModel {
     var editor: LibraryEditor?
     var confirmation: LibraryConfirmation?
     var filePicker: LibraryFilePicker?
+    var bibliographyDocument: BibliographyDocument?
+    var showsBibliographyExporter = false
 
     var showsNavigator = true
     var showsInspector = true
     var referenceSearchRequest = 0
     var tableScope: ReferenceScope = .library
     var tableSearch = ""
-    var tableSelection: UUID?
+    var tableSelection: Set<UUID> = []
     var tableSort = [KeyPathComparator(\ReferenceRow.title, comparator: .localizedStandard)]
     var expandedCollections: Set<UUID> = []
 
     init(store: (any LibraryStore)? = nil) { self.store = store }
 
     var tableQuery: Query { Query(scope: tableScope, search: tableSearch, revision: revision) }
-    var detailsRequest: DetailsRequest { DetailsRequest(id: tableSelection, revision: revision) }
+    var detailsRequest: DetailsRequest { DetailsRequest(id: inspectedReferenceID, revision: revision) }
     var selectedReference: BibliographicReference? { selectedRow?.reference }
     var selectedRow: ReferenceRow? {
-        guard let id = tableSelection else { return nil }
+        guard let id = inspectedReferenceID else { return nil }
         if let details, details.row.id == id { return details.row }
         return tableRows.first(where: { $0.id == id })
+    }
+    private var inspectedReferenceID: UUID? {
+        tableSelection.count == 1 ? tableSelection.first : nil
     }
     var collectionTree: [CollectionNode] {
         let groups = Dictionary(grouping: collections, by: \.parentID)
@@ -90,8 +95,7 @@ final class LibraryWindowModel {
             try Task.checkCancellation()
             collections = updated
             if let id = tableScope.collectionID, !updated.contains(where: { $0.id == id }) {
-                tableScope = .library
-                tableSelection = nil
+                selectScope(.library)
             }
         } catch { report(error) }
     }
@@ -106,9 +110,7 @@ final class LibraryWindowModel {
             try Task.checkCancellation()
             guard query == tableQuery else { return }
             tableRows = rows
-            if let tableSelection, !tableRows.contains(where: { $0.id == tableSelection }) {
-                self.tableSelection = nil
-            }
+            tableSelection.formIntersection(rows.map(\.id))
         } catch { report(error) }
     }
 
@@ -139,7 +141,7 @@ final class LibraryWindowModel {
     func selectScope(_ scope: ReferenceScope) {
         guard tableScope != scope else { return }
         tableScope = scope
-        tableSelection = nil
+        tableSelection = []
         tableRows = []
     }
 
