@@ -3,6 +3,30 @@ import Testing
 import TinyRefs
 @testable import TinyRefsApp
 
+@Test func quickLookResolvesAnAvailableAttachmentForTheCurrentSelection() async throws {
+    try await withTemporaryLibrary { @MainActor library, directory in
+        let reference = try await library.createReference(.init(citationKey: "SystemT", entryType: "book"))
+        let model = LibraryWindowModel(store: library)
+        model.tableSelection = [reference.id]
+        let request = model.detailsRequest
+        #expect(try await model.quickLookAttachment(for: request) == nil)
+
+        let missingSource = directory.appendingPathComponent("A.txt")
+        let availableSource = directory.appendingPathComponent("B.txt")
+        try Data("A".utf8).write(to: missingSource)
+        try Data("B".utf8).write(to: availableSource)
+        let missing = try await library.attachFile(at: missingSource, to: reference.id)
+        let available = try await library.attachFile(at: availableSource, to: reference.id)
+        let missingURL = try await library.attachmentFile(for: reference.id, attachmentID: missing.id)
+        try FileManager.default.removeItem(at: missingURL)
+        let availableURL = try await library.attachmentFile(for: reference.id, attachmentID: available.id)
+        #expect(try await model.quickLookAttachment(for: request) == availableURL)
+
+        model.tableSelection = []
+        #expect(try await model.quickLookAttachment(for: request) == nil)
+    }
+}
+
 @Test func openingAnotherLibraryInPlacePreservesTheCurrentLibraryUntilItSucceeds() async throws {
     try await withTemporaryLibrary { @MainActor first, directory in
         let firstCollection = try await first.createCollection(named: "First")

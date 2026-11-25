@@ -1,5 +1,6 @@
 import CoreTransferable
 import Foundation
+import QuickLook
 import SwiftUI
 import TinyRefs
 import UniformTypeIdentifiers
@@ -66,6 +67,8 @@ enum CollectionDrop: Transferable {
 
 struct ReferenceTable: View {
     @Bindable var model: LibraryWindowModel
+    @State private var quickLookRequest: LibraryWindowModel.DetailsRequest?
+    @State private var quickLookURL: URL?
 
     var body: some View {
         let rows = model.tableRows.sorted(using: model.tableSort)
@@ -134,6 +137,33 @@ struct ReferenceTable: View {
         .modifier(FileDropHighlight(enabled: model.tableScope.allowsImport && !model.working) {
             model.dropBibliographies($0, in: model.tableScope)
         })
+        .onKeyPress(.space, phases: .down) { press in
+            guard press.modifiers.isEmpty, !model.working, model.detailsRequest.id != nil else { return .ignored }
+            if quickLookURL != nil {
+                quickLookURL = nil
+            } else {
+                quickLookRequest = model.detailsRequest
+            }
+            return .handled
+        }
+        .onChange(of: model.detailsRequest) {
+            quickLookRequest = nil
+            quickLookURL = nil
+        }
+        .task(id: quickLookRequest) { await loadQuickLook() }
+        .quickLookPreview($quickLookURL)
+    }
+
+    private func loadQuickLook() async {
+        guard let request = quickLookRequest else { return }
+        defer { if quickLookRequest == request, !Task.isCancelled { quickLookRequest = nil } }
+        do {
+            let url = try await model.quickLookAttachment(for: request)
+            try Task.checkCancellation()
+            if request == model.detailsRequest { quickLookURL = url }
+        } catch {
+            if request == model.detailsRequest, !Task.isCancelled { model.report(error) }
+        }
     }
 }
 

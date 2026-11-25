@@ -287,6 +287,15 @@ extension LibraryWindowModel {
         return true
     }
 
+    func quickLookAttachment(for request: DetailsRequest) async throws -> URL? {
+        guard request == detailsRequest, let id = request.id, let store else { return nil }
+        do {
+            return try await store.attachmentFile(for: id, attachmentID: nil)
+        } catch LibraryError.noAvailableAttachments {
+            return nil
+        }
+    }
+
     func openAttachment(_ attachment: AttachmentRecord) {
         guard let store else { return }
         Task {

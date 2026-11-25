@@ -133,6 +133,8 @@ Highlight valid drop targets during a drag and show import or attachment errors 
 
 ### Opening PDFs
 
+Press **Space** with one reference selected in the reference table to preview its first available attachment in Quick Look.
+
 Double-click a reference row or choose **Open PDF in Preview** in the reference menu to open its first available PDF in Preview. Check attachments in the order shown in the inspector, which sorts by filename and uses the attachment UUID to break ties. When there is no available PDF, double-click shows the inspector.
 
 Opening an attachment from the inspector sends PDFs to Preview and other files to their default macOS applications. The app reports missing files when opening them.

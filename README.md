@@ -5,6 +5,14 @@
 TinyRefs is a lightweight macOS app for organizing references, bibliographies,
 and PDF attachments. It includes a command-line tool and is a work in progress.
 
+## Features
+
+- Create, edit, and search references in a native macOS interface.
+- Organize references into nested collections with drag and drop.
+- Import `.bib` files and export selected references, collections, or full libraries.
+- Attach files, preview them with Quick Look, and open PDFs in Preview.
+- Work with multiple local libraries from the app or the `tinyrefs` CLI.
+
 ## How it works
 
 The SwiftUI app and CLI share a local library at
