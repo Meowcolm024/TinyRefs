@@ -104,6 +104,8 @@ public enum ReferenceScope: Hashable, Sendable {
 }
 
 public enum LibraryError: LocalizedError, Equatable, Sendable {
+    case invalidLibraryLocation(URL)
+    case libraryLocationExists(URL)
     case referenceNotFound(UUID)
     case referenceInTrash(UUID)
     case referenceNotInTrash(UUID)
@@ -125,6 +127,10 @@ public enum LibraryError: LocalizedError, Equatable, Sendable {
 
     public var errorDescription: String? {
         switch self {
+        case .invalidLibraryLocation(let location):
+            "Couldn’t find a TinyRefs library at ‘\(location.path)’. Choose a library folder or its library.sqlite file."
+        case .libraryLocationExists(let location):
+            "‘\(location.lastPathComponent)’ already exists in the chosen folder. Choose a different library name or location."
         case .referenceNotFound(let id):
             "Reference \(id.databaseKey) was not found."
         case .referenceInTrash(let id):

@@ -5,10 +5,14 @@ APP_BUNDLE := .build/TinyRefs.app
 export MACOSX_DEPLOYMENT_TARGET ?= 26.0
 export SDKROOT ?= $(shell xcrun --sdk macosx --show-sdk-path)
 
-.PHONY: build bundle clean test rust rust-release
+.PHONY: build bundle cli clean test rust rust-release
 
 build: rust
 	swift build
+
+cli: export TINYREFS_RUST_PROFILE := release
+cli: rust-release
+	swift build -c release --product tinyrefs
 
 bundle: export TINYREFS_RUST_PROFILE := release
 bundle: rust-release

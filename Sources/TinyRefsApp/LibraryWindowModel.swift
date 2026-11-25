@@ -31,7 +31,8 @@ final class LibraryWindowModel {
     }
 
     var store: (any LibraryStore)?
-    var opening = false
+    private(set) var libraryDirectory: URL?
+    private(set) var opening = false
     var startupError: String?
     var working = false
     var revision = 0
@@ -57,6 +58,9 @@ final class LibraryWindowModel {
 
     init(store: (any LibraryStore)? = nil) { self.store = store }
 
+    var canOpenLibrary: Bool {
+        !working && editor == nil && confirmation == nil && bibliographyDocument == nil && filePicker == nil
+    }
     var canExportBibliography: Bool { store != nil && !working && bibliographyDocument == nil }
     var selectedCollection: LibraryCollection? {
         guard let id = tableScope.collectionID else { return nil }
@@ -82,23 +86,50 @@ final class LibraryWindowModel {
         return nodes(under: nil)
     }
 
-    func open(directory: URL) async {
-        guard store == nil, !opening else { return }
+    func openLibrary(at url: URL, createIfMissing: Bool = false) async {
+        guard canOpenLibrary else { return }
         opening = true
+        working = true
         startupError = nil
-        defer { opening = false }
+        defer {
+            opening = false
+            working = false
+        }
         do {
-            store = try await Task.detached { try SQLiteLibrary(directory: directory) }.value
+            let library = try await Task.detached {
+                if createIfMissing { return try SQLiteLibrary(directory: url) }
+                return try SQLiteLibrary(existingAt: url)
+            }.value
+            try Task.checkCancellation()
+            store = library
+            libraryDirectory = library.databaseURL.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+            collections = []
+            expandedCollections = []
+            tableScope = .library
+            tableSearch = ""
+            tableRows = []
+            tableSelection = []
+            details = nil
+            previewableReferences = []
+            revision += 1
+        } catch is CancellationError {
+            return
         } catch {
-            startupError = error.localizedDescription
+            if store == nil {
+                startupError = error.localizedDescription
+            } else {
+                report(error)
+            }
         }
     }
 
     func loadCollections() async {
         guard let store else { return }
+        let requestedRevision = revision
         do {
             let updated = try await store.collections()
             try Task.checkCancellation()
+            guard requestedRevision == revision else { return }
             collections = updated
             if let id = tableScope.collectionID, !updated.contains(where: { $0.id == id }) {
                 selectScope(.library)
@@ -203,13 +234,14 @@ struct WindowNotice {
 }
 
 enum WindowError: LocalizedError {
-    case libraryUnavailable, libraryBusy
+    case libraryUnavailable, libraryBusy, invalidLibraryName
     case duplicateField(String), incompleteField, expectedSingleReference, noAvailablePDF, cannotOpen(String)
 
     var errorDescription: String? {
         switch self {
         case .libraryUnavailable: "The library is unavailable."
         case .libraryBusy: "Wait for the current library operation to finish."
+        case .invalidLibraryName: "Enter a valid folder name for the new library."
         case .duplicateField(let name): "The field '\(name)' appears more than once."
         case .incompleteField: "Enter a name and a BibLaTeX expression for each field."
         case .expectedSingleReference: "Enter one BibTeX entry to create a reference."

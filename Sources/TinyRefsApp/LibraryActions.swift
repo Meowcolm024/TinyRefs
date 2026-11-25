@@ -220,7 +220,7 @@ extension LibraryWindowModel {
     }
 
     func dropCollection(_ item: CollectionDrag, into parentID: UUID?) -> Bool {
-        guard !working,
+        guard !working, item.libraryDirectory == libraryDirectory,
               let collection = collections.first(where: { $0.id == item.collectionID }),
               collection.parentID != parentID else { return false }
         if let parentID, !canParentCollection(collection.id, under: parentID) { return false }
@@ -238,7 +238,7 @@ extension LibraryWindowModel {
         }
 
         let referenceIDs = items.compactMap { item -> UUID? in
-            if case .reference(let drag) = item { return drag.referenceID }
+            if case .reference(let drag) = item, drag.libraryDirectory == libraryDirectory { return drag.referenceID }
             return nil
         }
         if let collectionID, referenceIDs.count == items.count {

@@ -4,26 +4,44 @@ import TinyRefs
 import UniformTypeIdentifiers
 
 struct LibraryWindow: View {
-    let directory: URL
+    @Binding var location: LibraryWindowLocation
     @State private var model = LibraryWindowModel()
 
     var body: some View {
         Group {
             if model.store != nil {
                 LibraryBrowser(model: model)
+                    .disabled(model.opening)
             } else if let error = model.startupError {
                 ContentUnavailableView {
                     Label("Couldn’t Open Library", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("Try Again") { Task { await model.open(directory: directory) } }
+                    Button("Try Again") { Task { await openLocation() } }
                 }
             } else {
                 ProgressView("Opening Library…")
             }
         }
-        .task { await model.open(directory: directory) }
+        .focusedSceneValue(\.libraryWindow, model)
+        .task { await openLocation() }
+        .onChange(of: model.libraryDirectory) { _, directory in
+            guard let directory, directory != location.url || location.createsIfMissing else { return }
+            location = LibraryWindowLocation(id: location.id, url: directory)
+        }
+        .alert(model.notice?.title ?? "TinyRefs", isPresented: Binding(
+            get: { model.notice != nil }, set: { if !$0 { model.notice = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.notice?.message ?? "")
+        }
+    }
+
+    private func openLocation() async {
+        guard model.store == nil else { return }
+        await model.openLibrary(at: location.url, createIfMissing: location.createsIfMissing)
     }
 }
 
@@ -41,6 +59,7 @@ private struct LibraryBrowser: View {
         } detail: {
             ReferenceTable(model: model)
                 .navigationTitle(model.title(for: model.tableScope))
+                .navigationSubtitle(model.libraryDirectory?.lastPathComponent ?? "")
         }
         .inspector(isPresented: $model.showsInspector) {
             ReferenceInspector(model: model)
@@ -56,7 +75,6 @@ private struct LibraryBrowser: View {
                 }
         }
         .toolbar { toolbar }
-        .focusedSceneValue(\.libraryWindow, model)
         .task(id: model.revision) { await model.loadCollections() }
         .task(id: query) { await model.loadTable(query) }
         .task(id: details) { await model.loadDetails(details) }
@@ -93,13 +111,6 @@ private struct LibraryBrowser: View {
         }
         .sheet(item: $model.editor) { editor in
             LibraryEditorSheet(model: model, editor: editor)
-        }
-        .alert(model.notice?.title ?? "TinyRefs", isPresented: Binding(
-            get: { model.notice != nil }, set: { if !$0 { model.notice = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.notice?.message ?? "")
         }
         .alert(model.confirmation?.title ?? "Confirm", isPresented: Binding(
             get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }
@@ -337,6 +348,7 @@ extension FocusedValues {
 
 struct LibraryCommands: Commands {
     @FocusedValue(\.libraryWindow) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -345,6 +357,13 @@ struct LibraryCommands: Commands {
                 .disabled(model == nil || model?.working == true)
             Button("New Collection…") { model?.editor = .newCollection(model?.tableScope.collectionID) }
                 .disabled(model == nil || model?.working == true)
+            Button("New Library…", action: createLibrary)
+            Divider()
+            Button("Open Library…") { chooseLibrary(inNewWindow: false) }
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(model?.canOpenLibrary == false)
+            Button("Open Library in New Window…") { chooseLibrary(inNewWindow: true) }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
         }
         CommandGroup(after: .importExport) {
             Button("Import…") {
@@ -386,6 +405,61 @@ struct LibraryCommands: Commands {
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .disabled(model?.selectedReference == nil)
+        }
+    }
+
+    private func chooseLibrary(inNewWindow: Bool) {
+        let currentWindow = model
+        let panel = NSOpenPanel()
+        panel.title = "Open Library"
+        panel.message = "Choose a TinyRefs library folder or its library.sqlite file."
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "sqlite") ?? .data]
+        panel.directoryURL = currentWindow?.libraryDirectory
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        if let currentWindow, !inNewWindow {
+            Task { await currentWindow.openLibrary(at: url) }
+        } else {
+            openWindow(value: LibraryWindowLocation(url: url))
+        }
+    }
+
+    private func createLibrary() {
+        let panel = NSOpenPanel()
+        panel.title = "New Library"
+        panel.message = "Choose where to create the new library folder."
+        panel.prompt = "Create"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = model?.libraryDirectory?.deletingLastPathComponent()
+
+        let label = NSTextField(labelWithString: "Library Name")
+        let nameField = NSTextField(string: "Untitled Library")
+        nameField.setAccessibilityLabel("Library Name")
+        nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
+        let accessory = NSStackView(views: [label, nameField])
+        accessory.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        panel.accessoryView = accessory
+        panel.isAccessoryViewDisclosed = true
+        guard panel.runModal() == .OK, let parent = panel.url else { return }
+
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != "..",
+              name.rangeOfCharacter(from: CharacterSet(charactersIn: "/:\0")) == nil else {
+            NSAlert(error: WindowError.invalidLibraryName).runModal()
+            return
+        }
+        let directory = parent.appendingPathComponent(name, isDirectory: true)
+        Task {
+            do {
+                _ = try await Task.detached { try SQLiteLibrary.create(at: directory) }.value
+                openWindow(value: LibraryWindowLocation(url: directory))
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
     }
 }

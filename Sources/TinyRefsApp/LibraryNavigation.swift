@@ -33,6 +33,7 @@ struct ReferenceRow: Identifiable {
 
 struct ReferenceDrag: Codable, Sendable, Transferable {
     let referenceID: UUID
+    var libraryDirectory: URL?
 
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: .json).visibility(.ownProcess)
@@ -41,6 +42,7 @@ struct ReferenceDrag: Codable, Sendable, Transferable {
 
 struct CollectionDrag: Codable, Sendable, Transferable {
     let collectionID: UUID
+    var libraryDirectory: URL?
 
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: UTType(
@@ -89,7 +91,7 @@ struct ReferenceTable: View {
             ForEach(rows) { row in
                 if row.reference.trashedAt == nil {
                     TableRow(row)
-                        .draggable(ReferenceDrag(referenceID: row.id))
+                        .draggable(ReferenceDrag(referenceID: row.id, libraryDirectory: model.libraryDirectory))
                         .dropDestination(for: URL.self) { urls in
                             _ = model.dropFiles(urls, on: row.reference)
                         }
@@ -229,7 +231,7 @@ private struct ScopeBranch: View {
         if scope == .library || scope.collectionID != nil {
             Group {
                 if let id = scope.collectionID {
-                    row.draggable(CollectionDrag(collectionID: id))
+                    row.draggable(CollectionDrag(collectionID: id, libraryDirectory: model.libraryDirectory))
                 } else {
                     row
                 }

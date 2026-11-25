@@ -3,6 +3,38 @@ import Testing
 import TinyRefs
 @testable import TinyRefsApp
 
+@Test func openingAnotherLibraryInPlacePreservesTheCurrentLibraryUntilItSucceeds() async throws {
+    try await withTemporaryLibrary { @MainActor first, directory in
+        let firstCollection = try await first.createCollection(named: "First")
+        let firstReference = try await first.createReference(.init(citationKey: "First", entryType: "book"))
+        try await first.setMembership(.init(collectionID: firstCollection.id, referenceID: firstReference.id), isMember: true)
+        let secondDirectory = directory.appendingPathComponent("Second", isDirectory: true)
+        let second = try SQLiteLibrary.create(at: secondDirectory)
+        let secondReference = try await second.createReference(.init(citationKey: "Second", entryType: "book"))
+
+        let model = LibraryWindowModel()
+        await model.openLibrary(at: first.databaseURL)
+        await model.loadCollections()
+        model.selectScope(.collection(firstCollection.id))
+        model.tableSearch = "First"
+        model.tableSelection = [firstReference.id]
+        await model.loadTable(model.tableQuery)
+
+        await model.openLibrary(at: directory.appendingPathComponent("Missing"))
+        #expect(model.notice != nil)
+        #expect(model.selectedReference == firstReference)
+        #expect(model.tableScope == .collection(firstCollection.id))
+
+        model.notice = nil
+        await model.openLibrary(at: secondDirectory)
+        #expect(model.libraryDirectory?.path == secondDirectory.resolvingSymlinksInPath().path)
+        #expect(model.tableScope == .library)
+        #expect(model.tableSearch.isEmpty && model.tableSelection.isEmpty && model.collections.isEmpty)
+        await model.loadTable(model.tableQuery)
+        #expect(model.tableRows.map(\.reference) == [secondReference])
+    }
+}
+
 @Test func movingCollectionsPreservesTheirContentsAndRejectsInvalidDrops() async throws {
     try await withTemporaryLibrary { @MainActor library, _ in
         let source = try await library.createCollection(named: "Source")

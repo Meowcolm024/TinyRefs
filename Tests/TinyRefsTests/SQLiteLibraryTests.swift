@@ -3,6 +3,47 @@ import GRDB
 import Testing
 @testable import TinyRefs
 
+@Test func customLibrariesRequireAnUnusedNameAndOpenFromTheirDatabaseFile() async throws {
+    try await withTemporaryLibrary { _, directory in
+        let destination = directory.appendingPathComponent("Research", isDirectory: true)
+        let library = try SQLiteLibrary.create(at: destination)
+        let reference = try await library.createReference(.init(citationKey: "SystemT", entryType: "book"))
+
+        #expect(throws: LibraryError.libraryLocationExists(destination)) {
+            try SQLiteLibrary.create(at: destination)
+        }
+        let ordinaryFile = directory.appendingPathComponent("Existing")
+        try Data("Keep this file".utf8).write(to: ordinaryFile)
+        #expect(throws: LibraryError.libraryLocationExists(ordinaryFile)) {
+            try SQLiteLibrary.create(at: ordinaryFile)
+        }
+        #expect(try String(contentsOf: ordinaryFile, encoding: .utf8) == "Keep this file")
+
+        let openedFolder = try SQLiteLibrary(existingAt: destination)
+        let openedFile = try SQLiteLibrary(existingAt: library.databaseURL)
+        #expect(try await openedFolder.reference(id: reference.id) == reference)
+        #expect(try await openedFile.reference(id: reference.id) == reference)
+    }
+}
+
+@Test func openingASelectedLocationDoesNotInitializeAnUnrelatedDatabase() async throws {
+    try await withTemporaryLibrary { _, directory in
+        let destination = directory.appendingPathComponent("Unrelated", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+        let databaseURL = destination.appendingPathComponent("library.sqlite")
+        #expect(throws: LibraryError.self) { try SQLiteLibrary(existingAt: destination) }
+        #expect(!FileManager.default.fileExists(atPath: databaseURL.path))
+
+        let unrelated = try DatabaseQueue(path: databaseURL.path)
+        try await unrelated.write { db in
+            try db.create(table: "other_data") { $0.column("message", .text) }
+        }
+        #expect(throws: LibraryError.self) { try SQLiteLibrary(existingAt: databaseURL) }
+        #expect(try await unrelated.read { try $0.tableExists("other_data") && !$0.tableExists("grdb_migrations") })
+        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("attachments").path))
+    }
+}
+
 @Test func bibliographyRoundTripPreservesMetadataAndExportsActiveCollectionMembers() async throws {
     try await withTemporaryLibrary { source, directory in
         let fixture = try #require(Bundle.module.url(

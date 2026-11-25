@@ -23,18 +23,20 @@ make bundle
 open .build/TinyRefs.app
 ```
 
-`make bundle` builds and locally signs the release app. Run `make build` to
-build the CLI, `make test` to run the Rust and Swift tests, or `make clean` to
-remove build outputs, including the app bundle. SwiftPM also clears custom
-files and caches placed in `.build`.
+`make bundle` builds and locally signs the release app. `make cli` builds the
+release CLI at `.build/release/tinyrefs`. Run `make build` for a debug build,
+`make test` to run the Rust and Swift tests, or `make clean` to remove build
+outputs, including the app bundle. SwiftPM also clears custom files and caches
+placed in `.build`.
 
 ## CLI usage
 
-After `make build`, import an existing bibliography, search the library,
-or export it to a new file.
+Build the CLI, then import an existing bibliography, search the library, or
+export it to a new file.
 
 ```sh
-tinyrefs=.build/debug/tinyrefs
+make cli
+tinyrefs=.build/release/tinyrefs
 "$tinyrefs" import references.bib
 "$tinyrefs" query Haskell
 "$tinyrefs" export library.bib

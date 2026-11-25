@@ -9,6 +9,8 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
     public let databaseURL: URL
     let database: DatabaseQueue
     let files: LibraryFiles
+    private static let databaseFilename = "library.sqlite"
+    private static let initialMigration = "createLibrary"
     static let containsText = DatabaseFunction("tinyrefs_contains_text", argumentCount: 2, pure: true) { values in
         guard let text = String.fromDatabaseValue(values[0]),
               let term = String.fromDatabaseValue(values[1]) else { return false }
@@ -17,9 +19,40 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
 
     /// Opens or creates the database and attachment directory for a library.
     public init(directory: URL) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let databaseURL = directory.appendingPathComponent("library.sqlite")
+        try self.init(directory: directory, requireExisting: false)
+    }
+
+    /// Opens an existing TinyRefs library from its directory or database file.
+    public init(existingAt location: URL) throws {
+        var isDirectory: ObjCBool = false
+        guard location.isFileURL, FileManager.default.fileExists(atPath: location.path, isDirectory: &isDirectory),
+              isDirectory.boolValue || location.lastPathComponent == Self.databaseFilename else {
+            throw LibraryError.invalidLibraryLocation(location)
+        }
+        let directory = isDirectory.boolValue ? location : location.deletingLastPathComponent()
+        try self.init(directory: directory.resolvingSymlinksInPath().standardizedFileURL, requireExisting: true)
+    }
+
+    /// Creates a library in a new directory. The final path must be unused.
+    public static func create(at directory: URL) throws -> Self {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        } catch let error as CocoaError where error.code == .fileWriteFileExists {
+            throw LibraryError.libraryLocationExists(directory)
+        }
+        return try Self(directory: directory)
+    }
+
+    private init(directory: URL, requireExisting: Bool) throws {
+        let databaseURL = directory.appendingPathComponent(Self.databaseFilename)
         let files = LibraryFiles(directory: directory)
+        if requireExisting {
+            guard try files.fileType(at: databaseURL) == .typeRegular else {
+                throw LibraryError.invalidLibraryLocation(directory)
+            }
+        } else {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
         configuration.busyMode = .timeout(5)
@@ -28,7 +61,7 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
         }
 
         let database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
-        try Self.migrate(database)
+        try Self.migrate(database, checkingLibraryAt: requireExisting ? directory : nil)
         try database.writeWithoutTransaction { db in
             try files.withLock {
                 try files.prepare()
@@ -48,9 +81,9 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
         }
     }
 
-    private static func migrate(_ database: DatabaseQueue) throws {
+    private static func migrate(_ database: DatabaseQueue, checkingLibraryAt directory: URL?) throws {
         var migrator = DatabaseMigrator()
-        migrator.registerMigration("createLibrary") { db in
+        migrator.registerMigration(initialMigration) { db in
             try db.create(table: ReferenceRow.databaseTableName) { table in
                 table.primaryKey("id", .text)
                 table.column("citation_key", .text).notNull().collate(.binary).unique()
@@ -86,6 +119,16 @@ public struct SQLiteLibrary: ReferenceStore, CollectionStore, AttachmentStore {
                     .references(ReferenceRow.databaseTableName, onDelete: .cascade)
                 table.primaryKey(["collection_id", "reference_id"])
             }
+        }
+        if let directory {
+            let isLibrary = try database.read { db in
+                let tables = [ReferenceRow.databaseTableName, ReferenceFieldRow.databaseTableName,
+                              AttachmentRow.databaseTableName, CollectionRow.databaseTableName,
+                              MembershipRow.databaseTableName]
+                return try migrator.appliedIdentifiers(db).contains(initialMigration) &&
+                    tables.allSatisfy { try db.tableExists($0) }
+            }
+            guard isLibrary else { throw LibraryError.invalidLibraryLocation(directory) }
         }
         try migrator.migrate(database)
     }
