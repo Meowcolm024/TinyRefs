@@ -134,7 +134,7 @@ private struct LibraryBrowser: View {
                 Task { await model.exportBibliography() }
             }
             .help("Export Full Library as BibTeX")
-            .disabled(model.working || model.bibliographyDocument != nil)
+            .disabled(!model.canExportBibliography)
         }
 
         ToolbarItem {
@@ -352,6 +352,17 @@ struct LibraryCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: .command)
             .disabled(model?.tableScope.allowsImport != true || model?.working == true)
+            Button("Export Full Library as BibTeX…") {
+                if let model { Task { await model.exportBibliography() } }
+            }
+            .disabled(model?.canExportBibliography != true)
+            let collection = model?.selectedCollection
+            Button("Export Collection as BibTeX…") {
+                if let model, let collection {
+                    Task { await model.exportBibliography(.collection(collection)) }
+                }
+            }
+            .disabled(collection == nil || model?.canExportBibliography != true)
         }
         CommandGroup(after: .sidebar) {
             Button(model?.showsNavigator == true ? "Hide Navigator" : "Show Navigator") {

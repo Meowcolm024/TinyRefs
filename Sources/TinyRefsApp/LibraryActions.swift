@@ -103,21 +103,33 @@ struct BibliographyDocument: FileDocument {
     }
 }
 
+enum BibliographyExportSource: Sendable {
+    case library
+    case collection(LibraryCollection)
+    case selection([BibliographicReference])
+}
+
 extension LibraryWindowModel {
-    func exportBibliography(_ selection: [BibliographicReference]? = nil) async {
-        guard let store, !working, bibliographyDocument == nil else { return }
+    func exportBibliography(_ source: BibliographyExportSource = .library) async {
+        guard canExportBibliography, let store else { return }
         working = true
         defer { working = false }
 
         do {
             let document = try await Task.detached {
-                if let selection {
+                switch source {
+                case .library:
+                    let text = try await store.exportBibLaTeX()
+                    return BibliographyDocument(text, filename: "Library.bib")
+                case .collection(let collection):
+                    let text = try await store.exportBibLaTeX(fromCollection: collection.id)
+                    let name = collection.name.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
+                    return BibliographyDocument(text, filename: "\(name).bib")
+                case .selection(let selection):
                     return try BibliographyDocument(
                         BibLaTeX.serialize(selection.map(\.metadata)), filename: "References.bib"
                     )
                 }
-                let text = try await store.exportBibLaTeX()
-                return BibliographyDocument(text, filename: "Library.bib")
             }.value
             bibliographyDocument = document
             showsBibliographyExporter = true

@@ -57,6 +57,12 @@ final class LibraryWindowModel {
 
     init(store: (any LibraryStore)? = nil) { self.store = store }
 
+    var canExportBibliography: Bool { store != nil && !working && bibliographyDocument == nil }
+    var selectedCollection: LibraryCollection? {
+        guard let id = tableScope.collectionID else { return nil }
+        return collections.first(where: { $0.id == id })
+    }
+
     var tableQuery: Query { Query(scope: tableScope, search: tableSearch, revision: revision) }
     var detailsRequest: DetailsRequest { DetailsRequest(id: inspectedReferenceID, revision: revision) }
     var selectedReference: BibliographicReference? { selectedRow?.reference }

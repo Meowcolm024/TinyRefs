@@ -106,9 +106,9 @@ struct ReferenceTable: View {
                     .disabled(!model.tableScope.allowsImport)
             } else {
                 Button(references.count == 1 ? "Export as BibTeX…" : "Export Selected as BibTeX…") {
-                    Task { await model.exportBibliography(references) }
+                    Task { await model.exportBibliography(.selection(references)) }
                 }
-                .disabled(model.working || model.bibliographyDocument != nil)
+                .disabled(!model.canExportBibliography)
                 if references.count == 1, let reference = references.first {
                     Divider()
                     ReferenceMenu(model: model, reference: reference, scope: model.tableScope)
@@ -215,6 +215,10 @@ private struct ScopeBranch: View {
                     Button("New Subcollection…") { model.editor = .newCollection(id) }
                     Button("Rename Collection…") { model.editor = .renameCollection(collection) }
                     Button("Move Collection…") { model.editor = .moveCollection(collection) }
+                    Button("Export Collection as BibTeX…") {
+                        Task { await model.exportBibliography(.collection(collection)) }
+                    }
+                    .disabled(!model.canExportBibliography)
                     Divider()
                     Button("Delete Collection…", role: .destructive) { model.confirmation = .deleteCollection(collection) }
                 } else if scope == .library {

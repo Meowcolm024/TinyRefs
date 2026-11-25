@@ -81,6 +81,30 @@ func newReferenceAppearsSelectedInUnfiledItems(fromBibTeX: Bool) async throws {
     }
 }
 
+@Test func collectionExportUsesTheRequestedCollectionsActiveDirectMembers() async throws {
+    try await withTemporaryLibrary { @MainActor library, _ in
+        let collection = try await library.createCollection(named: "Types/Logic")
+        let child = try await library.createCollection(named: "Logic", parentID: collection.id)
+        let directEntries = Data("@book{SystemT,} @book{Old,}".utf8)
+        let entries = try await library.importBibLaTeX(directEntries, into: collection.id)
+        let trashed = try #require(entries.last)
+        try await library.moveReferenceToTrash(id: trashed.id)
+        try await library.importBibLaTeX(Data("@book{ChildOnly,}".utf8), into: child.id)
+
+        let model = LibraryWindowModel(store: library)
+        await model.loadCollections()
+        model.selectScope(.collection(child.id))
+        model.tableSearch = "Unrelated search"
+        #expect(model.selectedCollection == child)
+        await model.exportBibliography(.collection(collection))
+
+        let document = try #require(model.bibliographyDocument)
+        #expect(model.showsBibliographyExporter)
+        #expect(document.filename == "Types-Logic.bib")
+        #expect(try BibLaTeX.references(from: document.data).map(\.citationKey) == ["SystemT"])
+    }
+}
+
 @Test func selectedExportPreservesFieldsAndSearchPrunesSelection() async throws {
     try await withTemporaryLibrary { @MainActor library, _ in
         let systemT = try await library.createReference(ReferenceMetadata(
@@ -95,7 +119,7 @@ func newReferenceAppearsSelectedInUnfiledItems(fromBibTeX: Bool) async throws {
         #expect(model.selectedReference == nil)
 
         let selection = model.tableRows.filter { model.tableSelection.contains($0.id) }.map(\.reference)
-        await model.exportBibliography(selection)
+        await model.exportBibliography(.selection(selection))
 
         let document = try #require(model.bibliographyDocument)
         #expect(model.showsBibliographyExporter)

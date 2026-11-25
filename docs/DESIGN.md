@@ -104,7 +104,9 @@ Use a native macOS window with a unified toolbar, resizable split panes, and SF 
 
 Click the toolbar's magnifying glass or press **Command-F** to expand and focus **Search References**. It filters the center reference list in the current scope. Press **Escape** in the field to clear the filter and collapse search.
 
-Use **Export Full Library as BibTeX** in the toolbar to save all active references to a `.bib` file from any view. Use **Command-click** to select individual rows or **Shift-click** to select a range. Right-click the selection and choose **Export Selected as BibTeX** to save those entries in one file.
+Use **Export Full Library as BibTeX** in the toolbar or the **File** menu to save all active references to a `.bib` file from any view. Use **Command-click** to select individual rows or **Shift-click** to select a range. Right-click the selection and choose **Export Selected as BibTeX** to save those entries in one file.
+
+Right-click a collection or select it and use the **File** menu to choose **Export Collection as BibTeX**. The `.bib` file contains the collection's active direct members, regardless of the current search.
 
 In **New Reference**, use **BibTeX** to paste or type a single entry, or use **Fields** to enter its citation key, entry type, and metadata in the reference editor. The new reference appears in **Unfiled Items**.
 
