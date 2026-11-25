@@ -4,9 +4,10 @@
 import Foundation
 import PackageDescription
 
+let rustProfile = ProcessInfo.processInfo.environment["TINYREFS_RUST_PROFILE"] == "release" ? "release" : "debug"
 let rustArchive = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
-    .appendingPathComponent("rust/biblatex-bridge/target/debug/libtinyrefs_biblatex.a")
+    .appendingPathComponent("rust/biblatex-bridge/target/\(rustProfile)/libtinyrefs_biblatex.a")
     .path
 
 let package = Package(
