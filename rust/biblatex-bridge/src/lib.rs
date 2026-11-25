@@ -1,5 +1,6 @@
 mod export;
 mod import;
+mod list;
 mod reference;
 mod structured;
 
@@ -87,6 +88,29 @@ pub unsafe extern "C" fn tinyrefs_biblatex_describe(input: *const u8, len: usize
 
 fn encode_json(value: &impl serde::Serialize) -> Result<Vec<u8>, (Status, String)> {
     serde_json::to_vec_pretty(value).map_err(|error| (Status::InternalError, error.to_string()))
+}
+
+/// Returns owned JSON list items or a diagnostic. Free it with tinyrefs_biblatex_free.
+///
+/// # Safety
+/// For nonzero len, input must point to len initialized bytes in a single
+/// allocation, readable and unchanged for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tinyrefs_biblatex_list_items(
+    input: *const u8,
+    len: usize,
+) -> BridgeResult {
+    // SAFETY: The caller guarantees the buffer is readable for the call.
+    unsafe {
+        invoke(input, len, |source| {
+            let request: list::ListRequest = serde_json::from_str(source)
+                .map_err(|error| (Status::InvalidInput, error.to_string()))?;
+            let items = request
+                .items()
+                .map_err(|message| (Status::InvalidMetadata, message))?;
+            encode_json(&items)
+        })
+    }
 }
 
 /// Returns owned UTF-8 BibLaTeX or a diagnostic. Free it with tinyrefs_biblatex_free.

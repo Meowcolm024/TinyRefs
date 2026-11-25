@@ -37,6 +37,15 @@ TinyRefsBibLaTeXResult tinyrefs_biblatex_parse(const uint8_t * _Nullable input, 
 TinyRefsBibLaTeXResult tinyrefs_biblatex_describe(const uint8_t * _Nullable input, size_t len);
 
 /*
+ * Borrows len readable bytes of UTF-8 list request JSON for the duration of the
+ * call. The request supplies a field (author or keywords) and an expression.
+ * Returns a JSON array of items or a diagnostic. A null input is accepted for
+ * len == 0 and reports invalid JSON. The bytes are read-only and have no NUL
+ * terminator. Release every result exactly once using tinyrefs_biblatex_free.
+ */
+TinyRefsBibLaTeXResult tinyrefs_biblatex_list_items(const uint8_t * _Nullable input, size_t len);
+
+/*
  * Borrows len readable bytes of UTF-8 reference JSON for the duration of the
  * call. A null input is accepted for len == 0 and reports invalid JSON. The
  * result contains UTF-8 BibLaTeX on success and a UTF-8 diagnostic otherwise.

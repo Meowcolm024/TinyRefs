@@ -4,6 +4,10 @@ import Foundation
 public enum BibLaTeX {
     public typealias ImportError = BridgeError
 
+    public enum ListField: String, Encodable, Sendable {
+        case author, keywords
+    }
+
     public enum BridgeError: LocalizedError {
         case invalidInput(String)
         case parse(String)
@@ -50,6 +54,28 @@ public enum BibLaTeX {
 
     public static func structuredFields(for reference: ReferenceMetadata) throws -> StructuredBibliographyFields {
         try structuredFields(for: [reference])[0]
+    }
+
+    /// Splits a list expression into editable items, preserving protected groups and commands.
+    public static func listItems(in expression: String, field: ListField) throws -> [String] {
+        struct Request: Encodable {
+            let field: ListField
+            let expression: String
+        }
+        let request = Request(field: field, expression: expression)
+        let json = try call(tinyrefs_biblatex_list_items, with: JSONEncoder().encode(request))
+        return try JSONDecoder().decode([String].self, from: Data(json.utf8))
+    }
+
+    /// Builds a BibLaTeX expression whose decoded list matches the supplied items.
+    public static func listExpression(from items: [String], field: ListField) throws -> String {
+        let values = items.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let separator = field == .author ? " and " : ", "
+        let expression = "{\(values.joined(separator: separator))}"
+        guard try listItems(in: expression, field: field) == values else {
+            throw BridgeError.invalidMetadata("Enter one item per row. Use braces to protect a separator inside an item.")
+        }
+        return expression
     }
 
     /// Serializes metadata as canonical UTF-8 BibLaTeX.

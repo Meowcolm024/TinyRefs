@@ -104,6 +104,25 @@ private func importFixture(_ filename: String) throws -> [ImportedReference] {
     #expect(try BibLaTeX.importJSON(from: Data()) == "[]")
 }
 
+@Test func editingBibLaTeXListsKeepsProtectedItemsAndNameParts() throws {
+    let author = #"{G{\"o}del, Kurt and {Types and Programming Group} and family={de Bruijn}, given=Nicolaas, id={DB}}"#
+    let items = try BibLaTeX.listItems(in: author, field: .author)
+    #expect(items == [#"G{\"o}del, Kurt"#, "{Types and Programming Group}", "family={de Bruijn}, given=Nicolaas, id={DB}"])
+    let changed = [items[2], "Church, Alonzo", items[1]]
+    let edited = try BibLaTeX.listExpression(from: changed, field: .author)
+    #expect(try BibLaTeX.listItems(in: edited, field: .author) == changed)
+
+    let keywords = try BibLaTeX.listItems(in: #""type theory" # ", {types, terms}, $F(a,b)$""#, field: .keywords)
+    #expect(keywords == ["type theory", "{types, terms}", "$F(a,b)$"])
+    #expect(try BibLaTeX.listExpression(from: [], field: .keywords) == "{}")
+    #expect(throws: BibLaTeX.BridgeError.self) {
+        try BibLaTeX.listExpression(from: ["types, terms"], field: .keywords)
+    }
+    #expect(throws: BibLaTeX.BridgeError.self) {
+        try BibLaTeX.listExpression(from: ["Gödel, Kurt and Church, Alonzo"], field: .author)
+    }
+}
+
 @Test func importReportsMalformedEntries() {
     do {
         _ = try BibLaTeX.importJSON(from: Data("@article{LinearHaskell, title = {Linear Haskell}".utf8))

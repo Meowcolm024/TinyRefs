@@ -106,6 +106,8 @@ Click the toolbar's magnifying glass or press **Command-F** to expand and focus 
 
 Use **New Reference** to paste or type a single BibTeX entry in a monospace editor. The new reference appears in **Unfiled Items**.
 
+**Edit Reference** presents a table of BibTeX fields with inline editing and controls to add or remove fields. Authors and keywords open in list editors. Use **Edit as BibTeX** from the field’s context menu to edit the full expression directly.
+
 In a collection, **Remove from Collection** removes the reference's membership.
 
 Use **Move to Trash** on an active reference to send it to the library Trash. In that view, **Restore** returns the entry to the library and **Move to macOS Trash** exports and removes it from the library.
@@ -128,11 +130,12 @@ Opening an attachment from the inspector sends PDFs to Preview and other files t
 
 ## Import and Export
 
-The Rust bridge exposes three operations:
+The Rust bridge exposes four operations:
 
 - **Import:** Parse BibLaTeX text into reference data.
 - **Export:** Serialize reference data into BibLaTeX text.
 - **Describe:** Extract structured metadata from stored field expressions for display and JSON export.
+- **List items:** Split an author or keyword expression into editable items while preserving protected groups.
 
 The bridge exchanges entry types, citation keys, and field expressions as UTF-8 JSON. Swift owns library IDs, collections, and managed attachments. The Rust bridge provides explicit memory ownership and structured error reporting.
 

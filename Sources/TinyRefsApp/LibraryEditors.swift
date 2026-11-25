@@ -109,6 +109,20 @@ private struct ReferenceEditorSheet: View {
         let id = UUID()
         var name: String
         var expression: String
+
+        var listKind: BibLaTeX.ListField? {
+            BibLaTeX.ListField(rawValue: name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+    }
+
+    private enum Cell: Hashable {
+        case name(UUID), value(UUID)
+
+        var fieldID: UUID {
+            switch self {
+            case .name(let id), .value(let id): id
+            }
+        }
     }
 
     let model: LibraryWindowModel
@@ -117,7 +131,10 @@ private struct ReferenceEditorSheet: View {
     @State private var key: String
     @State private var entryType: String
     @State private var fields: [Field]
+    @State private var selectedFieldID: UUID?
+    @State private var valueDraft: FieldValueDraft?
     @State private var error: String?
+    @FocusState private var focusedCell: Cell?
 
     init(model: LibraryWindowModel, reference: BibliographicReference) {
         self.model = model
@@ -131,29 +148,12 @@ private struct ReferenceEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Edit Reference").font(.headline)
-            Form {
-                TextField("Citation Key", text: $key)
-                TextField("Entry Type", text: $entryType)
-                Section("BibLaTeX Fields") {
-                    ForEach($fields) { $field in
-                        HStack(alignment: .top) {
-                            TextField("Field Name", text: $field.name).frame(width: 110)
-                            TextField("Expression", text: $field.expression, axis: .vertical)
-                                .lineLimit(1...4)
-                            Button("Remove Field", systemImage: "minus.circle") {
-                                fields.removeAll { $0.id == field.id }
-                            }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                    Button("Add Field", systemImage: "plus") { fields.append(Field(name: "", expression: "")) }
-                    Text("Use BibLaTeX expressions such as {Linear Haskell}. Use {} for an empty field.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            HStack(spacing: 16) {
+                identityField("Citation Key", text: $key)
+                identityField("Entry Type", text: $entryType).frame(width: 180)
             }
-            .formStyle(.grouped)
+            fieldTable
+            fieldActions
             if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             EditorButtons(action: "Save", working: model.working,
                           enabled: !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
@@ -166,7 +166,140 @@ private struct ReferenceEditorSheet: View {
             }
         }
         .padding(18)
-        .frame(width: 540, height: 470)
+        .frame(width: 680, height: 480)
+        .onChange(of: focusedCell) { _, cell in
+            if let cell { selectedFieldID = cell.fieldID }
+        }
+        .sheet(item: $valueDraft) { draft in
+            FieldValueEditorSheet(draft: draft) { expression in
+                guard let index = fields.firstIndex(where: { $0.id == draft.id }) else { return }
+                fields[index].expression = expression
+            }
+        }
+    }
+
+    private func identityField(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            TextField(title, text: text).labelsHidden().textFieldStyle(.roundedBorder)
+        }
+        .font(.system(.body, design: .monospaced))
+        .disabled(model.working)
+    }
+
+    private var fieldTable: some View {
+        Table(fields, selection: $selectedFieldID) {
+            TableColumn("Field") { field in
+                TextField("Field Name", text: binding(\.name, for: field))
+                    .textFieldStyle(.plain)
+                    .focused($focusedCell, equals: .name(field.id))
+            }
+            .width(min: 110, ideal: 145, max: 215)
+            TableColumn("BibTeX Value") { field in
+                if let kind = field.listKind {
+                    Button { editValue(field) } label: {
+                        Label(field.expression.isEmpty ? kind.title : preview(field.expression), systemImage: "list.bullet")
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit \(kind.title)")
+                } else if field.expression.contains(where: \.isNewline) {
+                    Button(preview(field.expression)) { editValue(field) }
+                        .buttonStyle(.plain)
+                        .lineLimit(1)
+                        .help("Edit BibTeX Value")
+                } else {
+                    TextField("Expression", text: binding(\.expression, for: field))
+                        .textFieldStyle(.plain)
+                        .focused($focusedCell, equals: .value(field.id))
+                }
+            }
+        }
+        .font(.system(.body, design: .monospaced))
+        .autocorrectionDisabled()
+        .tableStyle(.bordered)
+        .alternatingRowBackgrounds(.enabled)
+        .disabled(model.working)
+        .contextMenu(forSelectionType: UUID.self) { ids in
+            if let field = fields.first(where: { ids.contains($0.id) }) {
+                if let kind = field.listKind {
+                    Button("Edit \(kind.title)…") { editValue(field) }
+                }
+                Button("Edit as BibTeX…") { editValue(field, asList: false) }
+                Button("Remove Field", role: .destructive) { removeField(id: field.id) }
+            } else {
+                Button("Add Field", action: addField)
+            }
+        }
+    }
+
+    private var fieldActions: some View {
+        let selected = fields.first { $0.id == selectedFieldID }
+        return HStack {
+            ControlGroup {
+                Button("Add Field", systemImage: "plus", action: addField).help("Add Field")
+                Button("Remove Field", systemImage: "minus") {
+                    if let selected { removeField(id: selected.id) }
+                }
+                .help("Remove Field")
+                .disabled(selected == nil)
+            }
+            .labelStyle(.iconOnly)
+
+            Spacer()
+            Button(selected?.listKind.map { "Edit \($0.title)…" } ?? "Edit Value…") {
+                if let selected { editValue(selected) }
+            }
+            .disabled(selected == nil)
+        }
+        .disabled(model.working)
+    }
+
+    private func binding(_ keyPath: WritableKeyPath<Field, String>, for field: Field) -> Binding<String> {
+        Binding(get: {
+            fields.first(where: { $0.id == field.id })?[keyPath: keyPath] ?? field[keyPath: keyPath]
+        }, set: { value in
+            guard let index = fields.firstIndex(where: { $0.id == field.id }) else { return }
+            fields[index][keyPath: keyPath] = value
+        })
+    }
+
+    private func addField() {
+        let field = Field(name: "", expression: "")
+        let index = fields.firstIndex { $0.id == selectedFieldID }.map { $0 + 1 } ?? 0
+        fields.insert(field, at: index)
+        selectedFieldID = field.id
+        focusedCell = .name(field.id)
+    }
+
+    private func removeField(id: UUID) {
+        guard let index = fields.firstIndex(where: { $0.id == id }) else { return }
+        if focusedCell?.fieldID == id { focusedCell = nil }
+        fields.remove(at: index)
+        if selectedFieldID == id {
+            selectedFieldID = fields.isEmpty ? nil : fields[min(index, fields.count - 1)].id
+        }
+    }
+
+    private func editValue(_ field: Field, asList: Bool = true) {
+        selectedFieldID = field.id
+        let kind = asList ? field.listKind : nil
+        do {
+            let items: [String]
+            if let kind, !field.expression.isEmpty {
+                items = try BibLaTeX.listItems(in: field.expression, field: kind)
+            } else {
+                items = []
+            }
+            error = nil
+            valueDraft = FieldValueDraft(id: field.id, expression: field.expression, kind: kind, items: items)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func preview(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     private func metadata() throws -> ReferenceMetadata {
@@ -179,6 +312,123 @@ private struct ReferenceEditorSheet: View {
             values[name] = field.expression
         }
         return .init(citationKey: key, entryType: entryType, fields: values)
+    }
+}
+
+private extension BibLaTeX.ListField {
+    var title: String { self == .author ? "Authors" : "Keywords" }
+    var itemTitle: String { self == .author ? "Author" : "Keyword" }
+    var hint: String {
+        switch self {
+        case .author: "Use BibTeX names such as Gödel, Kurt. Put a name containing ‘and’ in braces."
+        case .keywords: "Enter one keyword per row. Put keywords containing commas in braces."
+        }
+    }
+}
+
+private struct FieldValueDraft: Identifiable {
+    let id: UUID
+    let expression: String
+    let kind: BibLaTeX.ListField?
+    let items: [String]
+}
+
+private struct FieldValueEditorSheet: View {
+    private struct Item: Identifiable {
+        let id = UUID()
+        var text: String
+    }
+
+    let draft: FieldValueDraft
+    let apply: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var expression: String
+    @State private var items: [Item]
+    @State private var selection: UUID?
+    @State private var error: String?
+    @FocusState private var focusedItem: UUID?
+
+    init(draft: FieldValueDraft, apply: @escaping (String) -> Void) {
+        self.draft = draft
+        self.apply = apply
+        _expression = State(initialValue: draft.expression)
+        _items = State(initialValue: draft.items.map(Item.init(text:)))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(draft.kind?.title ?? "BibTeX Value").font(.headline)
+            if let kind = draft.kind {
+                list(for: kind)
+            } else {
+                BibTeXEditor(source: $expression, isEditable: true)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(.separator)
+                            .allowsHitTesting(false)
+                    }
+            }
+            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            EditorButtons(action: "Apply", working: false, enabled: items.allSatisfy { item in
+                !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) { save() }
+        }
+        .padding(18)
+        .frame(width: 500, height: 340)
+        .onChange(of: focusedItem) { _, id in
+            if let id { selection = id }
+        }
+    }
+
+    private func list(for kind: BibLaTeX.ListField) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            List(selection: $selection) {
+                ForEach($items) { $item in
+                    TextField(kind.itemTitle, text: $item.text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(1...4)
+                        .focused($focusedItem, equals: item.id)
+                        .tag(item.id)
+                }
+                .onMove { items.move(fromOffsets: $0, toOffset: $1) }
+            }
+            .listStyle(.bordered)
+            .autocorrectionDisabled()
+
+            HStack {
+                ControlGroup {
+                    Button("Add \(kind.itemTitle)", systemImage: "plus") {
+                        let item = Item(text: "")
+                        let index = items.firstIndex { $0.id == selection }.map { $0 + 1 } ?? items.count
+                        items.insert(item, at: index)
+                        selection = item.id
+                        focusedItem = item.id
+                    }
+                    .help("Add \(kind.itemTitle)")
+                    Button("Remove \(kind.itemTitle)", systemImage: "minus") {
+                        items.removeAll { $0.id == selection }
+                        selection = nil
+                    }
+                    .help("Remove \(kind.itemTitle)")
+                    .disabled(selection == nil)
+                }
+                .labelStyle(.iconOnly)
+                Spacer()
+            }
+            Text(kind.hint).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func save() {
+        do {
+            let edited = items.map(\.text)
+            if let kind = draft.kind, edited != draft.items {
+                expression = try BibLaTeX.listExpression(from: edited, field: kind)
+            }
+            apply(expression)
+            dismiss()
+        } catch { self.error = error.localizedDescription }
     }
 }
 
