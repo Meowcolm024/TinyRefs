@@ -3,6 +3,38 @@ import Testing
 import TinyRefs
 @testable import TinyRefsApp
 
+@Test func movingCollectionsPreservesTheirContentsAndRejectsInvalidDrops() async throws {
+    try await withTemporaryLibrary { @MainActor library, _ in
+        let source = try await library.createCollection(named: "Source")
+        let child = try await library.createCollection(named: "Child", parentID: source.id)
+        let target = try await library.createCollection(named: "Target")
+        let reference = try await library.createReference(.init(citationKey: "SystemT", entryType: "book"))
+        let membership = CollectionMembership(collectionID: source.id, referenceID: reference.id)
+        try await library.setMembership(membership, isMember: true)
+
+        let model = LibraryWindowModel(store: library)
+        await model.loadCollections()
+        model.selectScope(.collection(source.id))
+        let drag = CollectionDrag(collectionID: source.id)
+        #expect(!model.dropCollection(drag, into: source.id))
+        #expect(!model.dropCollection(drag, into: child.id))
+        #expect(!model.dropCollection(drag, into: nil))
+
+        try await model.moveCollection(id: source.id, to: target.id)
+        await model.loadCollections()
+        #expect(model.expandedCollections.contains(target.id))
+        #expect(model.tableScope == .collection(source.id))
+        #expect(model.collectionTree.first?.children.first?.id == source.id)
+        #expect(!model.dropCollection(drag, into: target.id))
+
+        try await model.moveCollection(id: source.id, to: nil)
+        await model.loadCollections()
+        #expect(model.collectionTree.first?.id == source.id)
+        #expect(model.collectionTree.first?.children.map(\.id) == [child.id])
+        #expect(try await library.memberships(for: reference.id) == [membership])
+    }
+}
+
 @Test(arguments: [false, true])
 func newReferenceAppearsSelectedInUnfiledItems(fromBibTeX: Bool) async throws {
     try await withTemporaryLibrary { @MainActor library, _ in

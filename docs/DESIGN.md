@@ -123,6 +123,7 @@ Use **Move to Trash** on an active reference to send it to the library Trash. In
 | BibTeX or BibLaTeX `.bib` files from Finder | **Library**, **Unfiled Items**, a collection, or the center reference list for any of those views | Run the shared importer. A drop on a collection adds the imported references to it. A drop on the center reference list uses the current navigator selection. |
 | Regular files from Finder | An active reference row in the center list or its attachment area in the inspector | Copy each file into the managed library and attach it to the target reference. |
 | Active reference rows | A collection in the navigator | Add the references to that collection while keeping their existing memberships. |
+| A collection | Another collection, **Library**, or the **Collections** header | Drop on a collection to nest it there. Drop on **Library** or **Collections** to move it to the top level. Its subcollections and reference memberships move with it. |
 
 Highlight valid drop targets during a drag and show import or attachment errors in the window. **File > Import** adds references to the selected collection when applicable. Otherwise, imported references appear in Unfiled Items. **Add Attachment** in the inspector attaches a file to the selected active reference.
 

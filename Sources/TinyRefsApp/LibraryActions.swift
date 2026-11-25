@@ -202,13 +202,34 @@ extension LibraryWindowModel {
         }
     }
 
-    func dropOnCollection(_ items: [CollectionDrop], id collectionID: UUID) -> Bool {
+    func moveCollection(id: UUID, to parentID: UUID?) async throws {
+        try await perform { try await $0.moveCollection(id: id, to: parentID) }
+        if let parentID { setExpanded(true, collectionID: parentID) }
+    }
+
+    func dropCollection(_ item: CollectionDrag, into parentID: UUID?) -> Bool {
+        guard !working,
+              let collection = collections.first(where: { $0.id == item.collectionID }),
+              collection.parentID != parentID else { return false }
+        if let parentID, !canParentCollection(collection.id, under: parentID) { return false }
+
+        Task {
+            do { try await moveCollection(id: item.collectionID, to: parentID) } catch { report(error) }
+        }
+        return true
+    }
+
+    func dropInCollections(_ items: [CollectionDrop], collectionID: UUID?) -> Bool {
         guard !working, !items.isEmpty else { return false }
+        if items.count == 1, case .collection(let item) = items[0] {
+            return dropCollection(item, into: collectionID)
+        }
+
         let referenceIDs = items.compactMap { item -> UUID? in
             if case .reference(let drag) = item { return drag.referenceID }
             return nil
         }
-        if referenceIDs.count == items.count {
+        if let collectionID, referenceIDs.count == items.count {
             run { store in
                 for referenceID in referenceIDs {
                     try await store.setMembership(.init(collectionID: collectionID, referenceID: referenceID), isMember: true)
@@ -221,7 +242,8 @@ extension LibraryWindowModel {
             if case .bibliography(let url) = item { return url }
             return nil
         }
-        return urls.count == items.count && dropBibliographies(urls, in: .collection(collectionID))
+        let scope = collectionID.map(ReferenceScope.collection) ?? .library
+        return urls.count == items.count && dropBibliographies(urls, in: scope)
     }
 
     func handleFiles(_ urls: [URL], for picker: LibraryFilePicker) {

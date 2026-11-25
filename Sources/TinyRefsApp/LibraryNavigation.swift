@@ -39,11 +39,24 @@ struct ReferenceDrag: Codable, Sendable, Transferable {
     }
 }
 
+struct CollectionDrag: Codable, Sendable, Transferable {
+    let collectionID: UUID
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: UTType(
+            exportedAs: "io.github.meowcolm024.tinyrefs.collection-drag", conformingTo: .data
+        ))
+        .visibility(.ownProcess)
+    }
+}
+
 enum CollectionDrop: Transferable {
+    case collection(CollectionDrag)
     case reference(ReferenceDrag)
     case bibliography(URL)
 
     static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation(importing: CollectionDrop.collection).visibility(.ownProcess)
         ProxyRepresentation(importing: CollectionDrop.reference).visibility(.ownProcess)
         ProxyRepresentation(importing: CollectionDrop.bibliography)
     }
@@ -124,6 +137,7 @@ struct ReferenceTable: View {
 
 struct LibrarySidebar: View {
     let model: LibraryWindowModel
+    @State private var receivingCollection = false
 
     var body: some View {
         List(selection: Binding<ReferenceScope?>(
@@ -149,6 +163,13 @@ struct LibrarySidebar: View {
                         .disabled(model.working)
                 }
                 .padding(.trailing, 12)
+                .contentShape(Rectangle())
+                .dropDestination(for: CollectionDrag.self) { items, _ in
+                    guard items.count == 1, let item = items.first else { return false }
+                    return model.dropCollection(item, into: nil)
+                } isTargeted: { receivingCollection = $0 }
+                .background(receivingCollection && !model.working ? Color.accentColor.opacity(0.18) : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
             }
             Section {
                 ScopeBranch(model: model, scope: .trash, icon: "trash")
@@ -201,9 +222,16 @@ private struct ScopeBranch: View {
                 }
             }
 
-        if let collectionID = scope.collectionID {
-            row.dropDestination(for: CollectionDrop.self) { items, _ in
-                model.dropOnCollection(items, id: collectionID)
+        if scope == .library || scope.collectionID != nil {
+            Group {
+                if let id = scope.collectionID {
+                    row.draggable(CollectionDrag(collectionID: id))
+                } else {
+                    row
+                }
+            }
+            .dropDestination(for: CollectionDrop.self) { items, _ in
+                model.dropInCollections(items, collectionID: scope.collectionID)
             } isTargeted: { receivingDrop = $0 }
             .background(receivingDrop && !model.working ? Color.accentColor.opacity(0.18) : .clear,
                         in: RoundedRectangle(cornerRadius: 5))

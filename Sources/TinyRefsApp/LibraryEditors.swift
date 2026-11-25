@@ -562,17 +562,15 @@ private struct CollectionEditorSheet: View {
         let parentID = parentID
         Task {
             do {
-                try await model.perform { store in
-                    switch mode {
-                    case .create:
-                        _ = try await store.createCollection(named: name, parentID: parentID)
-                    case .rename(let collection):
-                        try await store.renameCollection(id: collection.id, to: name)
-                    case .move(let collection):
-                        try await store.moveCollection(id: collection.id, to: parentID)
-                    }
+                switch mode {
+                case .create:
+                    _ = try await model.perform { try await $0.createCollection(named: name, parentID: parentID) }
+                    if let parentID { model.setExpanded(true, collectionID: parentID) }
+                case .rename(let collection):
+                    try await model.perform { try await $0.renameCollection(id: collection.id, to: name) }
+                case .move(let collection):
+                    try await model.moveCollection(id: collection.id, to: parentID)
                 }
-                if let parentID { model.expandedCollections.insert(parentID) }
                 dismiss()
             } catch { self.error = error.localizedDescription }
         }
@@ -609,12 +607,7 @@ private struct CollectionEditorSheet: View {
 
     private func canUseParent(_ parent: LibraryCollection) -> Bool {
         guard case .move(let collection) = mode else { return true }
-        var ancestor: LibraryCollection? = parent
-        while let current = ancestor {
-            if current.id == collection.id { return false }
-            ancestor = model.collections.first { $0.id == current.parentID }
-        }
-        return true
+        return model.canParentCollection(collection.id, under: parent.id)
     }
 }
 

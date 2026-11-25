@@ -149,6 +149,17 @@ final class LibraryWindowModel {
         if expanded { expandedCollections.insert(collectionID) } else { expandedCollections.remove(collectionID) }
     }
 
+    func canParentCollection(_ collectionID: UUID, under parentID: UUID) -> Bool {
+        var ancestorID: UUID? = parentID
+        var visited: Set<UUID> = [collectionID]
+        while let id = ancestorID {
+            guard visited.insert(id).inserted,
+                  let ancestor = collections.first(where: { $0.id == id }) else { return false }
+            ancestorID = ancestor.parentID
+        }
+        return true
+    }
+
     func report(_ error: any Error) {
         guard !(error is CancellationError) else { return }
         notice = WindowNotice(title: "TinyRefs", message: error.localizedDescription)
