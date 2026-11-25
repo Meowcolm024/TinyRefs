@@ -106,9 +106,11 @@ Click the toolbar's magnifying glass or press **Command-F** to expand and focus 
 
 Use **Export Full Library as BibTeX** in the toolbar to save all active references to a `.bib` file from any view. Use **Command-click** to select individual rows or **Shift-click** to select a range. Right-click the selection and choose **Export Selected as BibTeX** to save those entries in one file.
 
-Use **New Reference** to paste or type a single BibTeX entry in a monospace editor. The new reference appears in **Unfiled Items**.
+In **New Reference**, use **BibTeX** to paste or type a single entry, or use **Fields** to enter its citation key, entry type, and metadata in the reference editor. The new reference appears in **Unfiled Items**.
 
 **Edit Reference** presents a table of BibTeX fields with inline editing and controls to add or remove fields. Authors and keywords open in list editors. Use **Edit as BibTeX** from the field’s context menu to edit the full expression directly.
+
+In either reference editor, choose a common entry type from the **Entry Type** dropdown or type a custom one.
 
 In a collection, **Remove from Collection** removes the reference's membership.
 

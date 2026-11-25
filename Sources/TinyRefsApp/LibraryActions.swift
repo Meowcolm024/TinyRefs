@@ -132,7 +132,16 @@ extension LibraryWindowModel {
             guard entries.count == 1, let metadata = entries.first else { throw WindowError.expectedSingleReference }
             return try await store.createReference(metadata)
         }
-        tableScope = .unfiled
+        revealCreatedReference(reference)
+    }
+
+    func createReference(_ metadata: ReferenceMetadata) async throws {
+        let reference = try await perform { try await $0.createReference(metadata) }
+        revealCreatedReference(reference)
+    }
+
+    private func revealCreatedReference(_ reference: BibliographicReference) {
+        selectScope(.unfiled)
         tableSelection = [reference.id]
         tableSearch = ""
         showsInspector = true

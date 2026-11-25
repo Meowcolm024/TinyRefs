@@ -9,7 +9,7 @@ struct LibraryEditorSheet: View {
     var body: some View {
         switch editor {
         case .newReference:
-            NewReferenceSheet(model: model)
+            ReferenceEditorSheet(model: model)
         case .editReference(let reference):
             ReferenceEditorSheet(model: model, reference: reference)
         case .newCollection(let parent):
@@ -21,39 +21,6 @@ struct LibraryEditorSheet: View {
         case .reassign(let attachment):
             ReassignEditorSheet(model: model, attachment: attachment)
         }
-    }
-}
-
-private struct NewReferenceSheet: View {
-    let model: LibraryWindowModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var source = ""
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("New Reference").font(.headline)
-            Text("BibTeX").font(.caption).foregroundStyle(.secondary)
-            BibTeXEditor(source: $source, isEditable: !model.working)
-                .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6).strokeBorder(.separator)
-                        .allowsHitTesting(false)
-                }
-            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
-            EditorButtons(action: "Create", working: model.working,
-                          enabled: !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                let input = source
-                Task {
-                    do {
-                        try await model.createReference(fromBibTeX: input)
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }
-            }
-        }
-        .padding(18)
-        .frame(width: 540, height: 330)
     }
 }
 
@@ -104,11 +71,62 @@ private struct BibTeXEditor: NSViewRepresentable {
     }
 }
 
+private struct EntryTypeComboBox: NSViewRepresentable {
+    private static let commonTypes = [
+        "article", "book", "booklet", "inbook", "incollection", "inproceedings", "manual",
+        "mastersthesis", "misc", "online", "phdthesis", "proceedings", "report", "techreport",
+        "thesis", "unpublished",
+    ]
+
+    @Binding var value: String
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let comboBox = NSComboBox()
+        comboBox.setAccessibilityLabel("Entry Type")
+        comboBox.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        comboBox.isEditable = true
+        comboBox.addItems(withObjectValues: Self.commonTypes)
+        comboBox.numberOfVisibleItems = 10
+        comboBox.hasVerticalScroller = true
+        comboBox.delegate = context.coordinator
+        return comboBox
+    }
+
+    func updateNSView(_ comboBox: NSComboBox, context: Context) {
+        context.coordinator.value = $value
+        comboBox.isEnabled = context.environment.isEnabled
+        if comboBox.stringValue != value { comboBox.stringValue = value }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(value: $value) }
+
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var value: Binding<String>
+
+        init(value: Binding<String>) { self.value = value }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else { return }
+            value.wrappedValue = comboBox.stringValue
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox,
+                  let selected = comboBox.objectValueOfSelectedItem as? String else { return }
+            value.wrappedValue = selected
+        }
+    }
+}
+
 private struct ReferenceEditorSheet: View {
+    private enum InputMethod: Hashable {
+        case bibTeX, fields
+    }
+
     private struct Field: Identifiable {
         let id = UUID()
         var name: String
-        var expression: String
+        var expression = ""
 
         var listKind: BibLaTeX.ListField? {
             BibLaTeX.ListField(rawValue: name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
@@ -126,8 +144,10 @@ private struct ReferenceEditorSheet: View {
     }
 
     let model: LibraryWindowModel
-    let reference: BibliographicReference
+    let reference: BibliographicReference?
     @Environment(\.dismiss) private var dismiss
+    @State private var inputMethod: InputMethod = .bibTeX
+    @State private var source = ""
     @State private var key: String
     @State private var entryType: String
     @State private var fields: [Field]
@@ -136,37 +156,63 @@ private struct ReferenceEditorSheet: View {
     @State private var error: String?
     @FocusState private var focusedCell: Cell?
 
-    init(model: LibraryWindowModel, reference: BibliographicReference) {
+    init(model: LibraryWindowModel, reference: BibliographicReference? = nil) {
         self.model = model
         self.reference = reference
-        _key = State(initialValue: reference.metadata.citationKey)
-        _entryType = State(initialValue: reference.metadata.entryType)
-        let stored = reference.metadata.fields
-        _fields = State(initialValue: stored.keys.sorted().map { Field(name: $0, expression: stored[$0] ?? "") })
+        _key = State(initialValue: reference?.metadata.citationKey ?? "")
+        _entryType = State(initialValue: reference?.metadata.entryType ?? "misc")
+        if let stored = reference?.metadata.fields {
+            _fields = State(initialValue: stored.sorted { $0.key < $1.key }.map {
+                Field(name: $0.key, expression: $0.value)
+            })
+        } else {
+            _fields = State(initialValue: [Field(name: "title"), Field(name: "author"), Field(name: "year")])
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Edit Reference").font(.headline)
-            HStack(spacing: 16) {
-                identityField("Citation Key", text: $key)
-                identityField("Entry Type", text: $entryType).frame(width: 180)
-            }
-            fieldTable
-            fieldActions
-            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
-            EditorButtons(action: "Save", working: model.working,
-                          enabled: !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                Task {
-                    do {
-                        try await model.save(metadata(), replacing: reference)
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
+            HStack {
+                Text(reference == nil ? "New Reference" : "Edit Reference").font(.headline)
+                if reference == nil {
+                    Spacer()
+                    Picker("Input Method", selection: $inputMethod) {
+                        Text("BibTeX").tag(InputMethod.bibTeX)
+                        Text("Fields").tag(InputMethod.fields)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(model.working)
                 }
             }
+            if usesBibTeX {
+                BibTeXEditor(source: $source, isEditable: !model.working)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(.separator)
+                            .allowsHitTesting(false)
+                    }
+            } else {
+                HStack(spacing: 16) {
+                    identityField("Citation Key") {
+                        TextField("Citation Key", text: $key).labelsHidden().textFieldStyle(.roundedBorder)
+                    }
+                    identityField("Entry Type") {
+                        EntryTypeComboBox(value: $entryType)
+                    }
+                    .frame(width: 180)
+                }
+                fieldTable
+                fieldActions
+            }
+            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            EditorButtons(action: reference == nil ? "Create" : "Save", working: model.working,
+                          enabled: canSubmit, submit: submit)
         }
         .padding(18)
         .frame(width: 680, height: 480)
+        .onChange(of: inputMethod) { error = nil }
         .onChange(of: focusedCell) { _, cell in
             if let cell { selectedFieldID = cell.fieldID }
         }
@@ -178,10 +224,31 @@ private struct ReferenceEditorSheet: View {
         }
     }
 
-    private func identityField(_ title: String, text: Binding<String>) -> some View {
+    private var usesBibTeX: Bool { reference == nil && inputMethod == .bibTeX }
+
+    private var canSubmit: Bool {
+        !(usesBibTeX ? source : key).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        Task {
+            do {
+                if usesBibTeX {
+                    try await model.createReference(fromBibTeX: source)
+                } else if let reference {
+                    try await model.save(metadata(), replacing: reference)
+                } else {
+                    try await model.createReference(metadata())
+                }
+                dismiss()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func identityField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            TextField(title, text: text).labelsHidden().textFieldStyle(.roundedBorder)
+            content()
         }
         .font(.system(.body, design: .monospaced))
         .disabled(model.working)
@@ -265,7 +332,7 @@ private struct ReferenceEditorSheet: View {
     }
 
     private func addField() {
-        let field = Field(name: "", expression: "")
+        let field = Field(name: "")
         let index = fields.firstIndex { $0.id == selectedFieldID }.map { $0 + 1 } ?? 0
         fields.insert(field, at: index)
         selectedFieldID = field.id

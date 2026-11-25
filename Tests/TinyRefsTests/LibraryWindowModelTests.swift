@@ -3,6 +3,31 @@ import Testing
 import TinyRefs
 @testable import TinyRefsApp
 
+@Test(arguments: [false, true])
+func newReferenceAppearsSelectedInUnfiledItems(fromBibTeX: Bool) async throws {
+    try await withTemporaryLibrary { @MainActor library, _ in
+        let model = LibraryWindowModel(store: library)
+        model.selectScope(.trash)
+        model.tableSearch = "Previous search"
+        model.showsInspector = false
+
+        let metadata = ReferenceMetadata(citationKey: "SystemT", entryType: "book", fields: ["title": "{System T}"])
+        if fromBibTeX {
+            try await model.createReference(fromBibTeX: BibLaTeX.serialize(metadata))
+        } else {
+            try await model.createReference(metadata)
+        }
+
+        let references = try await library.references(in: .unfiled)
+        #expect(references.map(\.metadata) == [metadata])
+        #expect(model.tableScope == .unfiled)
+        #expect(model.tableSearch.isEmpty)
+        #expect(model.showsInspector)
+        await model.loadTable(model.tableQuery)
+        #expect(model.selectedReference == references.first)
+    }
+}
+
 @Test func fullLibraryExportIgnoresScopeAndSearchAndExcludesTrash() async throws {
     try await withTemporaryLibrary { @MainActor library, _ in
         let collection = try await library.createCollection(named: "Type systems")
