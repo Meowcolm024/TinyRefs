@@ -18,8 +18,9 @@ bundle: rust-release
 	stage=$$(mktemp -d ".build/TinyRefs.XXXXXX"); \
 	trap 'rm -R "$$stage"' EXIT; \
 	bundle="$$stage/TinyRefs.app"; \
-	mkdir -p "$$bundle/Contents/MacOS"; \
+	mkdir -p "$$bundle/Contents/MacOS" "$$bundle/Contents/Resources"; \
 	install -m 644 Info.plist "$$bundle/Contents/Info.plist"; \
+	install -m 644 Resources/TinyRefs.icns "$$bundle/Contents/Resources/"; \
 	install -m 755 "$$bin_path/$(APP_EXECUTABLE)" "$$bundle/Contents/MacOS/$(APP_EXECUTABLE)"; \
 	codesign --force --sign - --timestamp=none "$$bundle"; \
 	codesign --verify --strict "$$bundle"; \

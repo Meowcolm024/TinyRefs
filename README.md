@@ -1,5 +1,7 @@
 # TinyRefs
 
+<img src="Resources/TinyRefsIcon.svg" alt="TinyRefs app icon" width="112">
+
 TinyRefs is a lightweight macOS app for organizing references, bibliographies,
 and PDF attachments. It includes a command-line tool and is a work in progress.
 
