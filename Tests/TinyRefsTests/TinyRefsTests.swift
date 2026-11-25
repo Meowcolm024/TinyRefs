@@ -52,6 +52,38 @@ private func importFixture(_ filename: String) throws -> [ImportedReference] {
     #expect(linearHaskell.structured.date?.start?.month == 12)
     #expect(linearHaskell.structured.abstract?.contains("system — both") == true)
     #expect(linearHaskell.structured.containerTitle == "Proc. ACM Program. Lang.")
+    #expect(linearHaskell.structured.fieldTexts?["issue_date"] == "January 2018")
+    #expect(linearHaskell.structured.fieldTexts?["articleno"] == "5")
+}
+
+@Test func rendersFieldExpressionsWithoutChangingBibliographyData() throws {
+    let fields = [
+        "pages": "{931--940}",
+        "custom_note": #"{G{\"o}del's {System T} &amp; recursion}"#,
+        "series": #""Lecture Notes" # " in Logic""#,
+        "example": #"{Set \{1, 2\}}"#,
+        "abstract": "{Price is $5}",
+        "note": "{}",
+        "crossref": "{metadata}",
+        "xdata": "{metadata}",
+        "ids": "{metadata}",
+    ]
+    let metadata = ReferenceMetadata(citationKey: "SystemT", entryType: "book", fields: fields)
+    let rendered = try BibLaTeX.structuredFields(for: metadata)
+    #expect(rendered.fieldTexts == [
+        "pages": "931–940",
+        "custom_note": "Gödel's System T & recursion",
+        "series": "Lecture Notes in Logic",
+        "example": "Set {1, 2}",
+        "abstract": "Price is $5",
+        "note": "",
+        "crossref": "metadata",
+        "xdata": "metadata",
+        "ids": "metadata",
+    ])
+    let export = try BibLaTeX.serialize(metadata)
+    #expect(export.contains(#"custom_note = {G{\"o}del's {System T} &amp; recursion}"#))
+    #expect(export.contains(#"example = {Set \{1, 2\}}"#))
 }
 
 @Test func structuresNamesAndProtectedKeywordsWithDateRanges() throws {

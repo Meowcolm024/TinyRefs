@@ -26,6 +26,7 @@ impl<'a> StructuredReference<'a> {
 
 #[derive(Serialize)]
 struct StructuredFields {
+    field_texts: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     authors: Vec<Name>,
@@ -55,7 +56,25 @@ impl StructuredFields {
     fn from_fields(fields: &BTreeMap<String, String>) -> Self {
         let entry = parsed_fields(fields);
         let text = |name| field_text(&entry, name);
+        let field_texts = fields
+            .iter()
+            .map(|(name, expression)| {
+                let value = match entry.get(name) {
+                    Some(chunks) => display_text(&chunks.format_verbatim()),
+                    None => {
+                        // The validated expression already has one outer pair of braces.
+                        let contents = expression
+                            .strip_prefix('{')
+                            .and_then(|text| text.strip_suffix('}'))
+                            .unwrap_or(expression);
+                        display_text(contents)
+                    }
+                };
+                (name.clone(), value.unwrap_or_default())
+            })
+            .collect();
         Self {
+            field_texts,
             title: text("title"),
             authors: names(&entry, "author"),
             editors: names(&entry, "editor"),
@@ -83,31 +102,11 @@ impl StructuredFields {
 }
 
 fn parsed_fields(fields: &BTreeMap<String, String>) -> Entry {
-    const KNOWN: &[&str] = &[
-        "title",
-        "author",
-        "editor",
-        "date",
-        "year",
-        "month",
-        "day",
-        "eventdate",
-        "origdate",
-        "urldate",
-        "keywords",
-        "abstract",
-        "journaltitle",
-        "journal",
-        "booktitle",
-        "publisher",
-        "doi",
-        "url",
-    ];
-    let fields: Vec<_> = KNOWN
+    let fields: Vec<_> = fields
         .iter()
-        .filter_map(|&name| {
-            let expression = fields.get(name)?;
-            can_decode_tex(expression).then_some((name, expression))
+        .filter(|(name, expression)| {
+            // Keep citation links literal and prevent resolution against the synthetic entry.
+            !matches!(name.as_str(), "crossref" | "xdata" | "ids") && can_decode_tex(expression)
         })
         .collect();
     let mut source = String::from("@misc{metadata,\n");

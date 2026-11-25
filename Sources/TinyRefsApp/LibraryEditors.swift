@@ -265,20 +265,18 @@ private struct ReferenceEditorSheet: View {
             TableColumn("BibTeX Value") { field in
                 if let kind = field.listKind {
                     Button { editValue(field) } label: {
-                        Label(field.expression.isEmpty ? kind.title : preview(field.expression), systemImage: "list.bullet")
+                        Label(field.expression.isEmpty ? kind.title : preview(field), systemImage: "list.bullet")
                             .lineLimit(1)
                     }
                     .buttonStyle(.plain)
                     .help("Edit \(kind.title)")
                 } else if field.expression.contains(where: \.isNewline) {
-                    Button(preview(field.expression)) { editValue(field) }
+                    Button(preview(field)) { editValue(field) }
                         .buttonStyle(.plain)
                         .lineLimit(1)
                         .help("Edit BibTeX Value")
                 } else {
-                    TextField("Expression", text: binding(\.expression, for: field))
-                        .textFieldStyle(.plain)
-                        .focused($focusedCell, equals: .value(field.id))
+                    inlineValue(for: field)
                 }
             }
         }
@@ -298,6 +296,24 @@ private struct ReferenceEditorSheet: View {
                 Button("Add Field", action: addField)
             }
         }
+    }
+
+    private func inlineValue(for field: Field) -> some View {
+        let showsPreview = focusedCell != .value(field.id) && !field.expression.isEmpty
+        let text = showsPreview ? preview(field) : field.expression
+        return TextField("Expression", text: binding(\.expression, for: field))
+            .textFieldStyle(.plain)
+            .focused($focusedCell, equals: .value(field.id))
+            .foregroundStyle(showsPreview ? Color.clear : Color.primary)
+            .accessibilityValue(text)
+            .overlay(alignment: .leading) {
+                if showsPreview {
+                    Text(verbatim: text)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
     }
 
     private var fieldActions: some View {
@@ -365,8 +381,15 @@ private struct ReferenceEditorSheet: View {
         }
     }
 
-    private func preview(_ text: String) -> String {
-        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    private func preview(_ field: Field) -> String {
+        let name = field.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let metadata = ReferenceMetadata(citationKey: "preview", entryType: "misc", fields: [name: field.expression])
+        do {
+            if let text = try BibLaTeX.structuredFields(for: metadata).fieldTexts?[name] { return text }
+        } catch {
+            // Incomplete draft expressions remain visible while they are being edited.
+        }
+        return field.expression.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     private func metadata() throws -> ReferenceMetadata {

@@ -28,6 +28,8 @@ public struct StructuredBibliographyFields: Codable, Equatable, Sendable {
         public let uncertain: Bool
     }
 
+    /// Display text keyed by the original field name. Older JSON may omit this map.
+    public let fieldTexts: [String: String]?
     public let title: String?
     public let authors: [Name]
     public let editors: [Name]

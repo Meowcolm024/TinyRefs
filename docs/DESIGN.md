@@ -144,7 +144,7 @@ The Rust bridge exposes four operations:
 
 The bridge exchanges entry types, citation keys, and field expressions as UTF-8 JSON. Swift owns library IDs, collections, and managed attachments. The Rust bridge provides explicit memory ownership and structured error reporting.
 
-Import and describe add a `structured` object containing author and editor name parts, keyword strings, readable title and abstract text, publication information, and available dates. An individual date has a display string and parsed year, month, and day components where available. Ranges can have two endpoints or an open end. Unrecognized dates remain available as display text. Structured values are derived on demand from fields in SQLite, so edits and existing libraries use the same extraction path.
+Import and describe add a `structured` object containing author and editor name parts, keyword strings, readable field values, publication information, and available dates. An individual date has a display string and parsed year, month, and day components where available. Ranges can have two endpoints or an open end. Unrecognized dates remain available as display text. Structured values are derived on demand from fields in SQLite, so edits and existing libraries use the same extraction path.
 
 Import uses the crate's raw entry representation to preserve explicitly supplied fields. Expand file-local string macros into self-contained expressions, and report unresolved macros as import errors. Preserve link fields such as `crossref` and `xdata` because the crate's high-level parser resolves inheritance and drops `xdata`. [Rust `biblatex` parser source](https://github.com/typst/biblatex/blob/main/src/lib.rs)
 

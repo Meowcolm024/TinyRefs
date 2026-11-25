@@ -120,7 +120,7 @@ struct ReferenceInspector: View {
                 information(label, value)
             }
             ForEach(fields.keys.filter { !represented.contains($0) }.sorted(), id: \.self) { name in
-                information(name, fields[name] ?? "")
+                information(name, parsed.fieldTexts?[name] ?? fields[name] ?? "")
             }
         }
     }
