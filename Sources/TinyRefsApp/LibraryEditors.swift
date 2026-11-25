@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TinyRefs
 
@@ -7,7 +8,9 @@ struct LibraryEditorSheet: View {
 
     var body: some View {
         switch editor {
-        case .reference(let reference):
+        case .newReference:
+            NewReferenceSheet(model: model)
+        case .editReference(let reference):
             ReferenceEditorSheet(model: model, reference: reference)
         case .newCollection(let parent):
             CollectionEditorSheet(model: model, mode: .create, parentID: parent)
@@ -21,6 +24,86 @@ struct LibraryEditorSheet: View {
     }
 }
 
+private struct NewReferenceSheet: View {
+    let model: LibraryWindowModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var source = ""
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New Reference").font(.headline)
+            Text("BibTeX").font(.caption).foregroundStyle(.secondary)
+            BibTeXEditor(source: $source, isEditable: !model.working)
+                .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6).strokeBorder(.separator)
+                        .allowsHitTesting(false)
+                }
+            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            EditorButtons(action: "Create", working: model.working,
+                          enabled: !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                let input = source
+                Task {
+                    do {
+                        try await model.createReference(fromBibTeX: input)
+                        dismiss()
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 540, height: 330)
+    }
+}
+
+private struct BibTeXEditor: NSViewRepresentable {
+    @Binding var source: String
+    let isEditable: Bool
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 6, height: 6)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.setAccessibilityLabel("BibTeX")
+        scrollView.drawsBackground = false
+        Task { @MainActor [weak textView] in
+            guard let textView else { return }
+            textView.window?.makeFirstResponder(textView)
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        context.coordinator.source = $source
+        textView.isEditable = isEditable
+        if textView.string != source { textView.string = source }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(source: $source) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var source: Binding<String>
+
+        init(source: Binding<String>) { self.source = source }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            source.wrappedValue = textView.string
+        }
+    }
+}
+
 private struct ReferenceEditorSheet: View {
     private struct Field: Identifiable {
         let id = UUID()
@@ -29,25 +112,25 @@ private struct ReferenceEditorSheet: View {
     }
 
     let model: LibraryWindowModel
-    let reference: BibliographicReference?
+    let reference: BibliographicReference
     @Environment(\.dismiss) private var dismiss
     @State private var key: String
     @State private var entryType: String
     @State private var fields: [Field]
     @State private var error: String?
 
-    init(model: LibraryWindowModel, reference: BibliographicReference?) {
+    init(model: LibraryWindowModel, reference: BibliographicReference) {
         self.model = model
         self.reference = reference
-        _key = State(initialValue: reference?.metadata.citationKey ?? "")
-        _entryType = State(initialValue: reference?.metadata.entryType ?? "article")
-        let stored = reference?.metadata.fields ?? ["title": "", "author": "", "year": ""]
+        _key = State(initialValue: reference.metadata.citationKey)
+        _entryType = State(initialValue: reference.metadata.entryType)
+        let stored = reference.metadata.fields
         _fields = State(initialValue: stored.keys.sorted().map { Field(name: $0, expression: stored[$0] ?? "") })
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(reference == nil ? "New Reference" : "Edit Reference").font(.headline)
+            Text("Edit Reference").font(.headline)
             Form {
                 TextField("Citation Key", text: $key)
                 TextField("Entry Type", text: $entryType)
@@ -72,7 +155,7 @@ private struct ReferenceEditorSheet: View {
             }
             .formStyle(.grouped)
             if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
-            EditorButtons(action: reference == nil ? "Create" : "Save", working: model.working,
+            EditorButtons(action: "Save", working: model.working,
                           enabled: !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                 Task {
                     do {

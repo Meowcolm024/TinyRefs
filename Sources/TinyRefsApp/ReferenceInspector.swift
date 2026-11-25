@@ -56,7 +56,7 @@ struct ReferenceInspector: View {
                 .foregroundStyle(.secondary)
             HStack {
                 if reference.trashedAt == nil {
-                    Button("Edit Reference…") { model.editor = .reference(reference) }
+                    Button("Edit Reference…") { model.editor = .editReference(reference) }
                         .disabled(model.working)
                 } else {
                     Button("Restore") { model.restore(reference) }

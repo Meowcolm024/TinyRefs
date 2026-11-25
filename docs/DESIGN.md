@@ -104,6 +104,8 @@ Use a native macOS window with a unified toolbar, resizable split panes, and SF 
 
 Click the toolbar's magnifying glass or press **Command-F** to expand and focus **Search References**. It filters the center reference list in the current scope. Press **Escape** in the field to clear the filter and collapse search.
 
+Use **New Reference** to paste or type a single BibTeX entry in a monospace editor. The new reference appears in **Unfiled Items**.
+
 In a collection, **Remove from Collection** removes the reference's membership.
 
 Use **Move to Trash** on an active reference to send it to the library Trash. In that view, **Restore** returns the entry to the library and **Move to macOS Trash** exports and removes it from the library.

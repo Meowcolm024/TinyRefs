@@ -5,7 +5,8 @@ import TinyRefs
 import UniformTypeIdentifiers
 
 enum LibraryEditor: Identifiable {
-    case reference(BibliographicReference?)
+    case newReference
+    case editReference(BibliographicReference)
     case newCollection(UUID?)
     case renameCollection(LibraryCollection)
     case moveCollection(LibraryCollection)
@@ -13,7 +14,8 @@ enum LibraryEditor: Identifiable {
 
     var id: String {
         switch self {
-        case .reference(let reference): "reference-\(reference?.id.uuidString ?? "new")"
+        case .newReference: "reference-new"
+        case .editReference(let reference): "reference-\(reference.id.uuidString)"
         case .newCollection: "new-collection"
         case .renameCollection(let collection): "rename-\(collection.id)"
         case .moveCollection(let collection): "move-\(collection.id)"
@@ -76,23 +78,29 @@ enum LibraryFilePicker: Equatable {
 }
 
 extension LibraryWindowModel {
-    func save(_ metadata: ReferenceMetadata, replacing original: BibliographicReference?) async throws {
-        if let original {
-            let old = original.metadata
-            let changes = ReferenceChanges(
-                citationKey: old.citationKey == metadata.citationKey ? nil : metadata.citationKey,
-                entryType: old.entryType == metadata.entryType ? nil : metadata.entryType,
-                fields: metadata.fields.filter { old.fields[$0.key] != $0.value },
-                removedFields: old.fields.keys.filter { metadata.fields[$0] == nil }
-            )
-            _ = try await perform { try await $0.updateReference(id: original.id, changes: changes) }
-        } else {
-            let reference = try await perform { try await $0.createReference(metadata) }
-            tableScope = .unfiled
-            tableSelection = reference.id
-            tableSearch = ""
-            showsInspector = true
+    func createReference(fromBibTeX source: String) async throws {
+        let reference = try await perform { store in
+            let entries = try await Task.detached {
+                try BibLaTeX.references(from: Data(source.utf8))
+            }.value
+            guard entries.count == 1, let metadata = entries.first else { throw WindowError.expectedSingleReference }
+            return try await store.createReference(metadata)
         }
+        tableScope = .unfiled
+        tableSelection = reference.id
+        tableSearch = ""
+        showsInspector = true
+    }
+
+    func save(_ metadata: ReferenceMetadata, replacing original: BibliographicReference) async throws {
+        let old = original.metadata
+        let changes = ReferenceChanges(
+            citationKey: old.citationKey == metadata.citationKey ? nil : metadata.citationKey,
+            entryType: old.entryType == metadata.entryType ? nil : metadata.entryType,
+            fields: metadata.fields.filter { old.fields[$0.key] != $0.value },
+            removedFields: old.fields.keys.filter { metadata.fields[$0] == nil }
+        )
+        _ = try await perform { try await $0.updateReference(id: original.id, changes: changes) }
     }
 
     func trash(_ reference: BibliographicReference) {
@@ -137,6 +145,28 @@ extension LibraryWindowModel {
                 CollectionMembership(collectionID: collectionID, referenceID: referenceID), isMember: isMember
             )
         }
+    }
+
+    func dropOnCollection(_ items: [CollectionDrop], id collectionID: UUID) -> Bool {
+        guard !working, !items.isEmpty else { return false }
+        let referenceIDs = items.compactMap { item -> UUID? in
+            if case .reference(let drag) = item { return drag.referenceID }
+            return nil
+        }
+        if referenceIDs.count == items.count {
+            run { store in
+                for referenceID in referenceIDs {
+                    try await store.setMembership(.init(collectionID: collectionID, referenceID: referenceID), isMember: true)
+                }
+            }
+            return true
+        }
+
+        let urls = items.compactMap { item -> URL? in
+            if case .bibliography(let url) = item { return url }
+            return nil
+        }
+        return urls.count == items.count && dropBibliographies(urls, in: .collection(collectionID))
     }
 
     func handleFiles(_ urls: [URL], for picker: LibraryFilePicker) {

@@ -185,7 +185,7 @@ struct WindowNotice {
 
 enum WindowError: LocalizedError {
     case libraryUnavailable, libraryBusy
-    case duplicateField(String), incompleteField, noAvailablePDF, cannotOpen(String)
+    case duplicateField(String), incompleteField, expectedSingleReference, noAvailablePDF, cannotOpen(String)
 
     var errorDescription: String? {
         switch self {
@@ -193,6 +193,7 @@ enum WindowError: LocalizedError {
         case .libraryBusy: "Wait for the current library operation to finish."
         case .duplicateField(let name): "The field '\(name)' appears more than once."
         case .incompleteField: "Enter a name and a BibLaTeX expression for each field."
+        case .expectedSingleReference: "Enter one BibTeX entry to create a reference."
         case .noAvailablePDF: "The reference has no available PDF."
         case .cannotOpen(let name): "macOS could not open '\(name)'."
         }

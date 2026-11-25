@@ -111,7 +111,7 @@ private struct LibraryBrowser: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup {
-            Button("New Reference", systemImage: "plus") { model.editor = .reference(nil) }
+            Button("New Reference", systemImage: "plus") { model.editor = .newReference }
                 .help("New Reference")
                 .disabled(model.working)
             Button("Import Bibliography", systemImage: "square.and.arrow.down") {
@@ -324,7 +324,7 @@ struct LibraryCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("New Reference…") { model?.editor = .reference(nil) }
+            Button("New Reference…") { model?.editor = .newReference }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(model == nil || model?.working == true)
             Button("New Collection…") { model?.editor = .newCollection(model?.tableScope.collectionID) }

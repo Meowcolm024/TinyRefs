@@ -32,11 +32,20 @@ struct ReferenceRow: Identifiable {
 }
 
 struct ReferenceDrag: Codable, Sendable, Transferable {
-    let id: UUID
-    static let contentType = UTType(exportedAs: "org.tinyrefs.reference")
+    let referenceID: UUID
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: contentType).visibility(.ownProcess)
+        CodableRepresentation(contentType: .json).visibility(.ownProcess)
+    }
+}
+
+enum CollectionDrop: Transferable {
+    case reference(ReferenceDrag)
+    case bibliography(URL)
+
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation(importing: CollectionDrop.reference).visibility(.ownProcess)
+        ProxyRepresentation(importing: CollectionDrop.bibliography)
     }
 }
 
@@ -67,7 +76,7 @@ struct ReferenceTable: View {
             ForEach(rows) { row in
                 if row.reference.trashedAt == nil {
                     TableRow(row)
-                        .draggable(ReferenceDrag(id: row.id))
+                        .draggable(ReferenceDrag(referenceID: row.id))
                         .dropDestination(for: URL.self) { urls in
                             _ = model.dropFiles(urls, on: row.reference)
                         }
@@ -80,7 +89,7 @@ struct ReferenceTable: View {
             if let row = rows.first(where: { ids.contains($0.id) }) {
                 ReferenceMenu(model: model, reference: row.reference, scope: model.tableScope)
             } else {
-                Button("New Reference…") { model.editor = .reference(nil) }
+                Button("New Reference…") { model.editor = .newReference }
                 Button("Import…") { model.filePicker = .importBibliography(model.tableScope) }
                     .disabled(!model.tableScope.allowsImport)
             }
@@ -117,10 +126,21 @@ struct LibrarySidebar: View {
                 ScopeBranch(model: model, scope: .library, icon: "books.vertical")
                 ScopeBranch(model: model, scope: .unfiled, icon: "tray")
             }
-            Section("Collections") {
+            Section {
                 ForEach(model.collectionTree) { node in
                     ScopeBranch(model: model, scope: .collection(node.id), icon: "folder", children: node.children)
                 }
+            } header: {
+                HStack {
+                    Text("Collections")
+                    Spacer(minLength: 0)
+                    Button("New Collection", systemImage: "plus") { model.editor = .newCollection(nil) }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .help("New Collection")
+                        .disabled(model.working)
+                }
+                .padding(.trailing, 12)
             }
             Section {
                 ScopeBranch(model: model, scope: .trash, icon: "trash")
@@ -136,7 +156,7 @@ private struct ScopeBranch: View {
     let scope: ReferenceScope
     let icon: String
     var children: [LibraryWindowModel.CollectionNode] = []
-    @State private var receivingReferences = false
+    @State private var receivingDrop = false
 
     var body: some View {
         if let id = scope.collectionID, !children.isEmpty {
@@ -156,8 +176,8 @@ private struct ScopeBranch: View {
         }
     }
 
-    private func label(leadingPadding: CGFloat = 0) -> some View {
-        Label(model.title(for: scope), systemImage: icon)
+    @ViewBuilder private func label(leadingPadding: CGFloat = 0) -> some View {
+        let row = Label(model.title(for: scope), systemImage: icon)
             .padding(.leading, leadingPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -172,20 +192,18 @@ private struct ScopeBranch: View {
                     Button("New Collection…") { model.editor = .newCollection(nil) }
                 }
             }
-            .modifier(FileDropHighlight(enabled: scope.allowsImport && !model.working) {
+
+        if let collectionID = scope.collectionID {
+            row.dropDestination(for: CollectionDrop.self) { items, _ in
+                model.dropOnCollection(items, id: collectionID)
+            } isTargeted: { receivingDrop = $0 }
+            .background(receivingDrop && !model.working ? Color.accentColor.opacity(0.18) : .clear,
+                        in: RoundedRectangle(cornerRadius: 5))
+        } else {
+            row.modifier(FileDropHighlight(enabled: scope.allowsImport && !model.working) {
                 model.dropBibliographies($0, in: scope)
             })
-            .dropDestination(for: ReferenceDrag.self) { items, _ in
-                guard let id = scope.collectionID, !model.working, !items.isEmpty else { return false }
-                model.run { store in
-                    for item in items {
-                        try await store.setMembership(.init(collectionID: id, referenceID: item.id), isMember: true)
-                    }
-                }
-                return true
-            } isTargeted: { receivingReferences = $0 && scope.collectionID != nil && !model.working }
-            .background(receivingReferences ? Color.accentColor.opacity(0.18) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5))
+        }
     }
 }
 
@@ -219,7 +237,7 @@ struct ReferenceMenu: View {
             .disabled(!model.previewableReferences.contains(reference.id))
         Divider()
         if reference.trashedAt == nil {
-            Button("Edit Reference…") { model.editor = .reference(reference) }.disabled(model.working)
+            Button("Edit Reference…") { model.editor = .editReference(reference) }.disabled(model.working)
             Button("Add Attachment…") { model.filePicker = .attach(reference.id) }.disabled(model.working)
             AddToCollectionMenu(model: model, referenceID: reference.id, existingIDs: existingCollectionIDs)
                 .labelStyle(.titleOnly)
